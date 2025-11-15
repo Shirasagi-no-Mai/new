@@ -1,0 +1,621 @@
+import openpyxl
+from openpyxl import Workbook
+from selenium.common.exceptions import ElementNotInteractableException
+from openpyxl.styles import PatternFill
+import re
+import sys
+import tkinter as tk
+import inspect
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from datetime import datetime
+import os
+import openpyxl
+import pandas as pd
+from openpyxl import Workbook
+from selenium.common.exceptions import ElementNotInteractableException
+from openpyxl.styles import PatternFill
+import re
+import sys
+import tkinter as tk
+import inspect
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from datetime import datetime
+import os
+import time
+from selenium.common.exceptions import NoAlertPresentException
+import requests
+import json
+import subprocess
+import traceback
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from requests.exceptions import ConnectionError, Timeout, RequestException
+from openpyxl.utils import get_column_letter
+from datetime import datetime, timedelta
+import base64
+import uuid
+from bs4 import BeautifulSoup
+import time
+from selenium.common.exceptions import NoAlertPresentException
+import requests
+import json
+import subprocess
+import traceback
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from requests.exceptions import ConnectionError, Timeout, RequestException
+from openpyxl.utils import get_column_letter
+from datetime import datetime, timedelta
+import base64
+import uuid
+from bs4 import BeautifulSoup
+
+user_home = os.path.expanduser("~")
+possible_paths = [
+    os.path.join(user_home, "Desktop"),
+    os.path.join(user_home, "桌面"),
+    os.path.join(user_home, "OneDrive", "Desktop"),
+    os.path.join(user_home, "OneDrive", "桌面")
+]
+
+desktop_path = next((path for path in possible_paths if os.path.exists(path)), None)
+
+if desktop_path:
+    file_path = os.path.join(desktop_path, "yuejie.xlsx")
+    if os.path.exists(file_path):
+        print("已找到用于输出的excel文件即将继续代码\n\n")
+        # 继续后续代码...
+    else:
+        print("未找到用于输出的excel文件，正在生成空的 yuejie.xlsx...\n\n")
+
+        # 创建一个带表头的空 Excel 文件（可打开、可编辑）
+        empty_df = pd.DataFrame(columns=["Entry No"])  # 可根据需要修改列名
+        empty_df.to_excel(file_path, index=False, engine='openpyxl')
+
+        print(f"已成功生成：{file_path}\n请打开文件填入数据后，重新运行程序。\n\n")
+        sys.exit()  # 程序停止，等待用户填数据
+
+
+def read_cookies_from_txt():
+    txt_file_path = os.path.join(desktop_path, "output.txt")
+
+    if not os.path.exists(txt_file_path):
+        print("output.txt 文件不存在！\n")
+        return {}
+
+    try:
+        with open(txt_file_path, 'r', encoding='utf-8') as txt_file:
+            data = json.load(txt_file)
+
+        raw_cookies = data.get("cookies", {})
+        if not isinstance(raw_cookies, dict):
+            print("cookies 结构异常")
+            return {}
+
+        cookies_dict = {}
+        for name, info in raw_cookies.items():
+            if isinstance(info, dict) and 'value' in info:
+                cookies_dict[name] = info['value']
+            else:
+                cookies_dict[name] = str(info)
+
+        print(f"提取 cookies: {len(cookies_dict)} 个键值对")
+        return cookies_dict
+
+    except json.JSONDecodeError as je:
+        print(f"JSON 解析失败！错误: {je}")
+        return {}
+    except Exception as e:
+        print(f"读取文本文件出错: {type(e).__name__}: {e}")
+        return {}
+
+
+def get_mawb_info(entry_no):
+    cookies_dict = read_cookies_from_txt()
+    if not cookies_dict:
+        return {"error": "cookies 读取失败"}
+
+    session = requests.Session()
+    for name, value in cookies_dict.items():
+        session.cookies.set(name, value, domain="www.netchb.com", path="/")
+
+    # Step 1: 访问菜单页保持会话
+    session.get("https://www.netchb.com/app/entry/entryMenu.do?checkResponse=true", verify=False)
+
+    # Step 2: POST 查询
+    payload = {
+        "filerCode": "NXU",
+        "entryNo": entry_no
+    }
+
+    headers = {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Connection": "keep-alive",
+        "Host": "www.netchb.com",
+        "Referer": f"https://www.netchb.com/app/entry/viewEntry.do?filerCode=NXU&entryNo={entry_no}",
+        "Sec-Ch-Ua": '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+
+    try:
+        resp = session.post(
+            url="https://www.netchb.com/app/entry/transmit/finalizeEntry.do",
+            data=payload,
+            headers=headers,
+            timeout=30,
+            verify=False
+        )
+    except Exception as e:
+        print("请求失败:", e)
+        return {k: "N/A" for k in [
+            "entryActionCode", "viaAce", "cargoReleaseViaAce",
+            "cargoReleaseActionCode", "arrivalDate", "inBondType", "saBtaAction"
+        ]}
+
+    if resp.status_code != 200 or "login" in resp.text.lower():
+        print("会话失效或请求失败")
+        return {k: "N/A" for k in [
+            "entryActionCode", "viaAce", "cargoReleaseViaAce",
+            "cargoReleaseActionCode", "arrivalDate", "inBondType", "saBtaAction"
+        ]}
+
+    # ====================== 3. 解析 HTML ======================
+    soup = BeautifulSoup(resp.text, 'html.parser')
+
+    result = {
+        "entryActionCode": "N/A",
+        "viaAce": "N/A",
+        "cargoReleaseViaAce": "N/A",
+        "cargoReleaseActionCode": "N/A",
+        "arrivalDate": "N/A",
+        "inBondType": "N/A",
+        "saBtaAction": "N/A"
+    }
+
+    # 1. entryActionCode
+    eac = soup.find("select", {"name": "entryActionCode"})
+    if eac:
+        selected = eac.find("option", selected=True)
+        result["entryActionCode"] = selected["value"] if selected else "N/A"
+
+    # 2. viaAce (checkbox)
+    via_ace = soup.find("input", {"name": "viaAce"})
+    if via_ace and via_ace.get("checked") is not None:
+        result["viaAce"] = via_ace.get("value", "true")
+
+    # 3. cargoReleaseViaAce
+    crva = soup.find("input", {"name": "cargoReleaseViaAce"})
+    if crva and crva.get("checked") is not None:
+        result["cargoReleaseViaAce"] = crva.get("value", "true")
+
+    # 4. cargoReleaseActionCode
+    crar = soup.find("select", {"name": "cargoReleaseActionCode"})
+    if crar:
+        selected = crar.find("option", selected=True)
+        result["cargoReleaseActionCode"] = selected["value"] if selected else "N/A"
+
+    # 5. arrivalDate
+    ar_d = soup.find("input", {"name": "arrivalDate"})
+    if ar_d and ar_d.get("value"):
+        result["arrivalDate"] = ar_d["value"]
+
+    # 6. inBondType —— 修复：即使没有 selected，也取第一个 option
+    ibt = soup.find("select", {"name": "inBondType"})
+    if ibt:
+        selected = ibt.find("option", selected=True)
+        if selected:
+            result["inBondType"] = selected["value"]
+        else:
+            first_opt = ibt.find("option")
+            result["inBondType"] = first_opt["value"] if first_opt else "N/A"
+    else:
+        result["inBondType"] = "N/A"
+
+    # 7. saBtaAction —— 修复：同上
+    sabac = soup.find("select", {"name": "saBtaAction"})
+    if sabac:
+        selected = sabac.find("option", selected=True)
+        if selected:
+            result["saBtaAction"] = selected["value"]
+        else:
+            first_opt = sabac.find("option")
+            result["saBtaAction"] = first_opt["value"] if first_opt else "N/A"
+    else:
+        result["saBtaAction"] = "N/A"
+
+    # ====================== 4. 输出结果 ======================
+    print(f"\n=== 单号 [{entry_no}] 解析结果 ===")
+    for key, value in result.items():
+        print(f"{key}: {value}")
+    print("=" * 40)
+
+    return result
+
+
+def creat_entry_query(entry_no):
+    result = get_mawb_info(entry_no)
+    if "error" in result:
+        print(f"[Payload] 获取详情失败: {result['error']}，停止构建")
+        return None
+    payload = {
+        "entryActionCode": result.get("entryActionCode", ""),
+        "viaAce": result.get("viaAce", ""),
+        "cargoReleaseViaAce": result.get("cargoReleaseViaAce", ""),
+        "cargoReleaseActionCode": result.get("cargoReleaseActionCode", ""),
+        "disNumber": "",
+        "results": "true",
+        "arrivalDate": result.get("arrivalDate", ""),
+        "actionCode": "",
+        "inBondType": result.get("inBondType", ""),
+        "saBtaAction": result.get("saBtaAction", ""),
+        "ogaCode": "",
+        "method": "cargoManifestQuery",
+        "cmqQueryBy": "bol",
+        "extensionClosure": "",
+        "filerCode": "NXU",
+        "entryNo": entry_no
+    }
+
+    from urllib.parse import urlencode
+    return urlencode(payload)
+
+
+def transmit_entry_request(entry_no):
+    cookies_dict = read_cookies_from_txt()
+    if not cookies_dict:
+        print("cookies 读取失败")
+        return None
+
+    payload_str = creat_entry_query(entry_no)
+    if payload_str is None:  # 失败返回 None
+        print("[Transmit] payload 构建失败，终止请求")
+        return None
+    session = requests.Session()
+    for name, value in cookies_dict.items():
+        session.cookies.set(name, value, domain="www.netchb.com", path="/")
+
+    # 生成 payload 字符串
+
+    headers = {
+        "Connection": "keep-alive",
+        "Content-Type": "application/x-www-form-urlencoded",  # 正确！
+        "Referer": f"https://www.netchb.com/app/entry/viewEntry.do?filerCode=NXU&entryNo={entry_no}",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "*/*",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Language": "zh-CN,zh;q=0.9"
+    }
+
+    url = "https://www.netchb.com/app/entry/transmit/transmitEntry.do"
+
+    try:
+        response = session.post(
+            url=url,
+            data=payload_str,  # 直接传 urlencoded 字符串
+            headers=headers,
+            timeout=30,
+            verify=False,
+            allow_redirects=False  # 保留 302 原始响应
+        )
+
+        print(f"[Transmit] 状态码: {response.status_code}")
+        print(f"[Transmit] Location: {response.headers.get('Location', 'N/A')}")
+        print(f"[Transmit] 响应长度: {len(response.text)}")
+
+        return session, response
+
+    except Exception as e:
+        print(f"[Transmit] 请求失败: {e}")
+        return None, None
+
+
+def get_query_number(entry_no):
+
+    cookies_dict = read_cookies_from_txt()
+    if not cookies_dict:
+        print("cookies 读取失败")
+        return None
+
+    result = transmit_entry_request(entry_no)
+    if not result:
+        print("[Query] transmit 失败，跳过查询 ID")
+        return None
+    session, transmit_resp = result  # 解包
+
+    for name, value in cookies_dict.items():
+        session.cookies.set(name, value, domain="www.netchb.com", path="/")
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "Pragma": "no-cache",
+        "Expires": "Wed, 31 Dec 1969 19:00:00 EST",
+        "Referer": f"https://www.netchb.com/app/entry/viewEntry.do?filerCode=NXU&entryNo={entry_no}",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Language": "zh-CN,zh;q=0.9"
+    }
+
+    url = "https://www.netchb.com/app/entry/entryMenu.do"
+    payload = {"checkResponse": ""}
+
+    try:
+        response = session.post(
+            url=url,
+            data=payload,
+            headers=headers,
+            timeout=30,
+            verify=False
+        )
+
+        print(f"[Menu Check] 状态码: {response.status_code}")
+        print(f"[Menu Check] 响应长度: {len(response.text)}")
+
+        # 尝试 JSON（备用）
+        try:
+            json_data = response.json()
+            print("[Menu Check] 返回 JSON:")
+            print(json.dumps(json_data, indent=2, ensure_ascii=False))
+            return json_data
+        except:
+            pass  # 不是 JSON，继续解析 HTML
+
+        # 解析 HTML，找第一个 stMsg 开头的 td
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(response.text, 'html.parser')
+        st_msg_td = soup.find("td", id=lambda x: x and x.startswith("stMsg"))
+
+        if st_msg_td:
+            msg_id = st_msg_td["id"].replace("stMsg", "")
+            print(f"[Menu Check] 提取到的第一个 transmission ID: {msg_id}")
+            return msg_id
+        else:
+            print("[Menu Check] 未找到任何 stMsg 开头的 ID")
+            return None
+
+    except Exception as e:
+        print(f"[Menu Check] 请求失败: {e}")
+        return None
+
+
+
+
+
+
+
+
+def view_query_result(entry_no):
+    # 1. cookies
+    cookies_dict = read_cookies_from_txt()
+    if not cookies_dict:
+        print("[View] cookies 读取失败")
+        return ["error"] * 8
+
+    # 2. transmission_id
+    transmission_id = get_query_number(entry_no)
+
+    if not transmission_id or isinstance(transmission_id, dict):
+        print("[View] 未能获取有效 transmission_id")
+        return ["error"] * 8
+
+    # 3. 请求
+    session = requests.Session()
+    for name, value in cookies_dict.items():
+        session.cookies.set(name, value, domain="www.netchb.com", path="/")
+
+    headers = {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Connection": "keep-alive",
+        "Host": "www.netchb.com",
+        "Sec-Ch-Ua": '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    }
+
+    url = "https://www.netchb.com/app/transmissions/viewTransmission.do"
+    payload = {"id": transmission_id}
+
+    try:
+        response = session.get(url=url, params=payload, headers=headers, timeout=30, verify=False)
+        if response.status_code != 200:
+            print(f"[View] 请求失败，状态码: {response.status_code}")
+            return ["error"] * 8
+
+        text = response.text
+        codes = ["1H", "2H", "1A", "4A", "1I", "2I", "1B", "4B"]
+        counts = [text.count(code) for code in codes]
+
+        print(f"[View] 统计结果: {counts}")
+        return counts  # 成功返回 [n1, n2, ..., n8]
+
+    except Exception as e:
+        print(f"[View] 请求异常: {e}")
+        return ["error"] * 8
+
+
+
+
+
+
+def get_invoice_id_from_entry(entry_no):
+    """
+    输入: entry_no (str)
+    输出: invoice_id (str) 或 None
+    从 response.text 中提取 iRow1246024201 或 href 中的 invoiceId=1246024201
+    """
+    cookies_dict = read_cookies_from_txt()
+    if not cookies_dict:
+        return None
+
+    session = requests.Session()
+    for name, value in cookies_dict.items():
+        session.cookies.set(name, value, domain="www.netchb.com", path="/")
+
+    headers = {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Connection": "keep-alive",
+        "Host": "www.netchb.com",
+        "Referer": "https://www.netchb.com/app/entry/processViewEntries.do",
+        "Sec-Ch-Ua": '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
+    }
+
+    # 你原来的 URL 也行，只要 response 有 iRow 或 href
+    url = f"https://www.netchb.com/app/entry/viewEntry.do?filerCode=NXU&entryNo={entry_no}"
+    payload = {"filerCode": "NXU", "entryNo": entry_no}
+
+    try:
+        response = session.post(url=url, data=payload, headers=headers, timeout=30, verify=False)
+
+
+
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        # 方法 1: 从 <tr id="iRow1246024201">
+        irow_tr = soup.find("tr", id=re.compile(r"^iRow\d+$"))
+        if irow_tr:
+            invoice_id = irow_tr["id"].replace("iRow", "")
+            return invoice_id
+
+        # 方法 2: 从 href="...invoiceId=1246024201..."
+        a_tag = soup.find("a", href=re.compile(r"invoiceId=\d+"))
+        if a_tag:
+            invoice_id = re.search(r"invoiceId=(\d+)", a_tag["href"]).group(1)
+            return invoice_id
+
+        return None
+
+    except Exception as e:
+        return None
+
+def get_manufacturer_from_invoice(entry_no):
+    cookies_dict = read_cookies_from_txt()
+    if not cookies_dict:
+        print("cookies 读取失败")
+        return "error"
+
+    invoice_id=get_invoice_id_from_entry(entry_no)
+    if not invoice_id:
+        print("invoice_id 读取失败")
+        return "error"
+    session = requests.Session()
+    for name, value in cookies_dict.items():
+        session.cookies.set(name, value, domain="www.netchb.com", path="/")
+
+    headers = {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Connection": "keep-alive",
+        "Host": "www.netchb.com",
+        "Referer": f"https://www.netchb.com/app/entry/viewEntry.do?filerCode=NXU&entryNo={entry_no}",
+        "Sec-Ch-Ua": '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
+    }
+
+    url = f"https://www.netchb.com/app/entry/invoice/editInvoice.do?method=viewInvoice&invoiceId=1246024201&filerCode=NXU&entryNo={entry_no}"
+    payload = {
+        "method": "viewInvoice",
+        "invoiceId": invoice_id,
+        "filerCode": "NXU",
+        "entryNo": entry_no
+    }
+
+    try:
+        response = session.post(url=url, data=payload, headers=headers, timeout=30, verify=False)
+        print(f"[Get Manufacturer] 状态码: {response.status_code}")
+        print(f"[Get Manufacturer] 响应长度: {len(response.text)}")
+        print("-" * 100)
+        print(response.text)  # 完整打印 HTML
+        print("-" * 100)
+
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(response.text, 'html.parser')
+        line_tr = soup.find("tr", class_="light")
+        if not line_tr:
+            print("[Get Manufacturer] 未找到 tr.light")
+            return "error"
+
+        tds = line_tr.find_all("td")
+        if len(tds) < 9:
+            print(f"[Get Manufacturer] td 数量不足: {len(tds)}")
+            return "error"
+
+        manufacturer = tds[8].get_text(strip=True)
+        print(f"[Get Manufacturer] 提取到的 Manufacturer: {manufacturer}")
+        return manufacturer
+
+    except Exception as e:
+        print(f"[Get Manufacturer] 请求失败: {e}")
+        return "error"
+
+
+df = pd.read_excel(file_path, header=None, engine='openpyxl')
+entry_nos = df[0].astype(str).tolist()
+
+# 2. 处理每个单号（在单号前加 2）
+results = []
+for no in entry_nos:
+    prefixed_no = f"2{no}"  # <--- 这里在前面加 2
+    print(f"处理 {prefixed_no}...")
+
+    transmit_entry_request(prefixed_no)  # Step 1
+    counts = view_query_result(prefixed_no)  # Step 2: 返回 8 个 count
+    manu = get_manufacturer_from_invoice(prefixed_no) or "N/A"  # Step 3
+
+    # 结果行：原始单号 + counts（或 N/A） + manufacturer
+    result_row = [no] + (counts if counts != ["error"] * 8 else ["N/A"] * 8) + [manu]
+    results.append(result_row)
+
+# 3. 写 Excel（9 列：单号 + 8个代码 + manufacturer）
+pd.DataFrame(results, columns=[
+    "entry_no", "1H","2H","1A","4A","1I","2I","1B","4B", "manufacturer"
+]).to_excel(file_path, index=False)
+
