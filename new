@@ -4,26 +4,11 @@ from selenium.common.exceptions import ElementNotInteractableException
 from openpyxl.styles import PatternFill
 import re
 import sys
+from bs4 import BeautifulSoup
+
 import tkinter as tk
 import inspect
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
-from datetime import datetime
-import os
-import openpyxl
 import pandas as pd
-from openpyxl import Workbook
-from selenium.common.exceptions import ElementNotInteractableException
-from openpyxl.styles import PatternFill
-import re
-import sys
-import tkinter as tk
-import inspect
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -31,591 +16,1535 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.webdriver.common.action_chains import ActionChains
 from datetime import datetime
 import os
 import time
 from selenium.common.exceptions import NoAlertPresentException
+from selenium.webdriver.support.ui import Select
+from selenium.common.exceptions import StaleElementReferenceException
+from tkinter import Toplevel
+from tkinter import ttk
+import requests
+from collections import Counter
+import shutil
+import glob
+from seleniumwire.utils import decode
 import requests
 import json
+import base64
+import zlib
+import gzip
 import subprocess
+from requests.exceptions import ConnectionError, Timeout, RequestException
 import traceback
+from openpyxl import load_workbook
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from requests.exceptions import ConnectionError, Timeout, RequestException
-from openpyxl.utils import get_column_letter
-from datetime import datetime, timedelta
-import base64
-import uuid
-from bs4 import BeautifulSoup
-import time
-from selenium.common.exceptions import NoAlertPresentException
-import requests
-import json
-import subprocess
-import traceback
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-from requests.exceptions import ConnectionError, Timeout, RequestException
-from openpyxl.utils import get_column_letter
-from datetime import datetime, timedelta
-import base64
-import uuid
-from bs4 import BeautifulSoup
+import msoffcrypto
+import string
+import re
+import numpy as np  # 导入numpy以检查NaN和Inf值
 
-user_home = os.path.expanduser("~")
-possible_paths = [
-    os.path.join(user_home, "Desktop"),
-    os.path.join(user_home, "桌面"),
-    os.path.join(user_home, "OneDrive", "Desktop"),
-    os.path.join(user_home, "OneDrive", "桌面")
-]
+# *************************通过个人网页更新过期日期*************************************************************************
+CONFIG_URL = "https://raw.githubusercontent.com/Shirasagi-no-Mai/my-exe-control/main/expiration_config.json"
 
-desktop_path = next((path for path in possible_paths if os.path.exists(path)), None)
 
-if desktop_path:
-    file_path = os.path.join(desktop_path, "yuejie.xlsx")
-    if os.path.exists(file_path):
-        print("已找到用于输出的excel文件即将继续代码\n\n")
-        # 继续后续代码...
+def fetch_expiration_date():
+    try:
+        response = requests.get(CONFIG_URL)
+        response.raise_for_status()
+        config = json.loads(response.text)
+        return datetime.strptime(config['expiration_date'], '%Y-%m-%d')
+    except requests.exceptions.RequestException as e:
+        print(f"网络请求失败: {e}")
+
+        return None
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
+        print(f"解析错误: {e}")
+        return None
+
+
+expiration_date1 = fetch_expiration_date()
+print(f"expiration_date1: {expiration_date1}")
+
+# ② 功能权限配置
+# ----------------------------
+PERMISSION_URL = "https://raw.githubusercontent.com/Shirasagi-no-Mai/my-exe-control2/refs/heads/main/onlinecode"
+
+
+def fetch_permissions():
+    """从远程读取功能权限列表"""
+    try:
+        response = requests.get(PERMISSION_URL, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        permissions = {f["name"]: f["allowed_users"] for f in data.get("functions", [])}
+        return permissions
+    except requests.exceptions.RequestException as e:
+        print(f"网络请求失败: {e}")
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
+        print(f"解析错误: {e}")
+    return {}
+
+
+permissions = fetch_permissions()
+
+
+def is_user_allowed(func_name, username):
+    """检查用户是否有权限执行某函数"""
+    return username in permissions.get(func_name, [])
+
+
+# ----------------------------
+# ✅ 示例执行
+# ----------------------------
+
+
+permissions = fetch_permissions()
+print("权限列表示例：")
+print(json.dumps(permissions, indent=2, ensure_ascii=False))
+
+# *************************通过个人网页更新过期日期*************************************************************************
+
+
+# *************************预设*****************************************************************************************
+
+# 更新输出文本框
+windowname = ""
+from selenium.common.exceptions import UnexpectedAlertPresentException, ElementClickInterceptedException
+
+
+def update_output_text(output_text, message):
+    output_text.insert(tk.END, message)
+    output_text.yview(tk.END)
+
+
+# *************************预设*****************************************************************************************
+def netchb_token(account, password, output_text):
+    expiration_date = expiration_date1
+    now = datetime.now()
+    func_name = inspect.currentframe().f_code.co_name  # 自动获取当前函数名
+
+    if expiration_date and now > expiration_date:
+        if not is_user_allowed(func_name, account):
+            update_output_text(output_text, "程序已过期，请联系Larry获取更新版本。\n\n")
+            exit()
+    user_home = os.path.expanduser("~")
+    possible_paths = [
+        os.path.join(user_home, "Desktop"),
+        os.path.join(user_home, "桌面"),
+        os.path.join(user_home, "OneDrive", "Desktop"),
+        os.path.join(user_home, "OneDrive", "桌面")
+    ]
+
+    desktop_path = next((path for path in possible_paths if os.path.exists(path)), None)
+
+
+    if desktop_path:
+        txt_file_path = os.path.join(desktop_path, "yuejie.txt")
+        if os.path.exists(txt_file_path):
+            update_output_text(output_text, "已找到output.txt，正在运行\n")
+            pass
+        else:
+            update_output_text(output_text, "已创建需要的文件 需要再次点击开始\n")
+            with open(txt_file_path, 'w', encoding='utf-8'):
+                pass
+            sys.exit()  # 程序立即停止
     else:
-        print("未找到用于输出的excel文件，正在生成空的 yuejie.xlsx...\n\n")
+        update_output_text(output_text,"创建excel失败")
+        sys.exit()  # 程序立即停止
 
-        # 创建一个带表头的空 Excel 文件（可打开、可编辑）
-        empty_df = pd.DataFrame(columns=["Entry No"])  # 可根据需要修改列名
-        empty_df.to_excel(file_path, index=False, engine='openpyxl')
+    chrome_options = webdriver.ChromeOptions()
+    chrome_options.add_argument("--start-maximized")  # 启动时最大化
+    chrome_options.add_argument("--disable-gpu")  # 解决某些系统的图形渲染问题
+    chrome_options.add_argument("--no-sandbox")  # 非root用户需要此参数
+    chrome_options.add_argument("--disable-dev-shm-usage")  # 避免某些共享内存问题
+    chrome_options.add_argument("--always-on-top")  # 窗口置顶 (实验性参数)
+    chrome_options.add_argument("--force-device-scale-factor=0.5")  # 设置缩放比例为50%
 
-        print(f"已成功生成：{file_path}\n请打开文件填入数据后，重新运行程序。\n\n")
-        sys.exit()  # 程序停止，等待用户填数据
+    # 启动 Chrome 浏览器并加载已保存的用户数据
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    driver.set_window_size(1920, 1080)
 
+    # 通过 JavaScript 强制设置缩放比例
+    driver.get("https://www.google.com")
+    driver.execute_script("document.body.style.zoom='50%'")
+    url = "https://www.netchb.com/app/entry/"
+    driver.get(url)
+    driver.maximize_window()  # 最大化窗口
 
-def read_cookies_from_txt():
-    txt_file_path = os.path.join(desktop_path, "output.txt")
+    all_tabs = driver.window_handles
 
-    if not os.path.exists(txt_file_path):
-        print("output.txt 文件不存在！\n")
-        return {}
+    # 遍历所有窗口，关闭不需要的 "data:" 标签页
+    for tab in all_tabs:
+        driver.switch_to.window(tab)
+        if "data:" in driver.current_url:
+            driver.close()  # 关闭 "data:" 标签页
+
+    # 重新获取当前所有窗口句柄
+    all_tabs = driver.window_handles
+
+    # 如果有剩余窗口，切换到第一个
+    if all_tabs:
+        driver.switch_to.window(all_tabs[0])
+
+    account = account
+    password =password
+    # # 输入账号和密码
+    username = account  # 替换为实际账号
+    password = password  # 替换为实际密码
+
+    # 定位到账号和密码输入框
+    username_field = driver.find_element(By.XPATH, '//*[@id="lName"]')
+    username_field.clear()  # 清除输入框中的任何内容
+    username_field.send_keys(username)  # 输入用户名
+
+    # 输入密码
+    password_field = driver.find_element(By.XPATH, '//*[@id="pass"]')
+    password_field.clear()  # 清除输入框中的任何内容
+    password_field.send_keys(password)  # 输入密码
+
+    # 点击登录按钮
+    login_button = driver.find_element(By.XPATH,
+                                       "/html/body/div[2]/div[3]/div/main/div/div/div/article/div/div/form/div[2]/input")
+    login_button.click()
+    initial_title = driver.title
+    initial_url = driver.current_url
+    url = "https://www.netchb.com/app/entry/"
+    driver.get(url)
+
+    def page_changed(t, u):
+        def _pred(d): return d.title != t or d.current_url != u
+
+        return _pred
 
     try:
-        with open(txt_file_path, 'r', encoding='utf-8') as txt_file:
-            data = json.load(txt_file)
+        WebDriverWait(driver, 50).until(page_changed(initial_title, initial_url))
+    except Exception as e:
+        raise
 
-        raw_cookies = data.get("cookies", {})
-        if not isinstance(raw_cookies, dict):
-            print("cookies 结构异常")
+    def get_cookies_from_driver(driver):
+        """
+        从 Selenium driver 获取 cookies，并转换为 requests.Session 能正确使用的格式
+        保留 domain, path, secure, expiry 等关键属性
+        """
+        try:
+            selenium_cookies = driver.get_cookies()
+            requests_cookies = {}
+
+
+            for cookie in selenium_cookies:
+                name = cookie['name']
+                value = cookie['value']
+                domain = cookie.get('domain', '')
+                path = cookie.get('path', '/')
+                secure = cookie.get('secure', False)
+                expiry = cookie.get('expiry')  # 可选，requests 会自动处理
+
+                # 关键：使用 requests 的 cookiejar 机制正确设置
+                # 注意：我们不能直接用 dict，requests 需要用 .set()
+                # 所以这里我们返回一个 list，后面用 session.cookies.set()
+                requests_cookies[name] = {
+                    'value': value,
+                    'domain': domain,
+                    'path': path,
+                    'secure': secure,
+                    'expiry': expiry
+                }
+
+
+
+            return requests_cookies  # 返回结构化字典
+
+        except Exception as e:
+            print(f"[Error] 获取 cookies 失败: {e}")
+            traceback.print_exc()
             return {}
 
-        cookies_dict = {}
-        for name, info in raw_cookies.items():
-            if isinstance(info, dict) and 'value' in info:
-                cookies_dict[name] = info['value']
-            else:
-                cookies_dict[name] = str(info)
-
-        print(f"提取 cookies: {len(cookies_dict)} 个键值对")
-        return cookies_dict
-
-    except json.JSONDecodeError as je:
-        print(f"JSON 解析失败！错误: {je}")
-        return {}
-    except Exception as e:
-        print(f"读取文本文件出错: {type(e).__name__}: {e}")
-        return {}
-
-
-def get_mawb_info(entry_no):
-    cookies_dict = read_cookies_from_txt()
-    if not cookies_dict:
-        return {"error": "cookies 读取失败"}
-
-    session = requests.Session()
-    for name, value in cookies_dict.items():
-        session.cookies.set(name, value, domain="www.netchb.com", path="/")
-
-    # Step 1: 访问菜单页保持会话
-    session.get("https://www.netchb.com/app/entry/entryMenu.do?checkResponse=true", verify=False)
-
-    # Step 2: POST 查询
-    payload = {
-        "filerCode": "NXU",
-        "entryNo": entry_no
-    }
-
-    headers = {
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-        "Accept-Encoding": "gzip, deflate, br, zstd",
-        "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Connection": "keep-alive",
-        "Host": "www.netchb.com",
-        "Referer": f"https://www.netchb.com/app/entry/viewEntry.do?filerCode=NXU&entryNo={entry_no}",
-        "Sec-Ch-Ua": '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Sec-Ch-Ua-Platform": '"Windows"',
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "same-origin",
-        "Sec-Fetch-User": "?1",
-        "Upgrade-Insecure-Requests": "1",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
-
-    try:
-        resp = session.post(
-            url="https://www.netchb.com/app/entry/transmit/finalizeEntry.do",
-            data=payload,
-            headers=headers,
-            timeout=30,
-            verify=False
-        )
-    except Exception as e:
-        print("请求失败:", e)
-        return {k: "N/A" for k in [
-            "entryActionCode", "viaAce", "cargoReleaseViaAce",
-            "cargoReleaseActionCode", "arrivalDate", "inBondType", "saBtaAction"
-        ]}
-
-    if resp.status_code != 200 or "login" in resp.text.lower():
-        print("会话失效或请求失败")
-        return {k: "N/A" for k in [
-            "entryActionCode", "viaAce", "cargoReleaseViaAce",
-            "cargoReleaseActionCode", "arrivalDate", "inBondType", "saBtaAction"
-        ]}
-
-    # ====================== 3. 解析 HTML ======================
-    soup = BeautifulSoup(resp.text, 'html.parser')
-
-    result = {
-        "entryActionCode": "N/A",
-        "viaAce": "N/A",
-        "cargoReleaseViaAce": "N/A",
-        "cargoReleaseActionCode": "N/A",
-        "arrivalDate": "N/A",
-        "inBondType": "N/A",
-        "saBtaAction": "N/A"
-    }
-
-    # 1. entryActionCode
-    eac = soup.find("select", {"name": "entryActionCode"})
-    if eac:
-        selected = eac.find("option", selected=True)
-        result["entryActionCode"] = selected["value"] if selected else "N/A"
-
-    # 2. viaAce (checkbox)
-    via_ace = soup.find("input", {"name": "viaAce"})
-    if via_ace and via_ace.get("checked") is not None:
-        result["viaAce"] = via_ace.get("value", "true")
-
-    # 3. cargoReleaseViaAce
-    crva = soup.find("input", {"name": "cargoReleaseViaAce"})
-    if crva and crva.get("checked") is not None:
-        result["cargoReleaseViaAce"] = crva.get("value", "true")
-
-    # 4. cargoReleaseActionCode
-    crar = soup.find("select", {"name": "cargoReleaseActionCode"})
-    if crar:
-        selected = crar.find("option", selected=True)
-        result["cargoReleaseActionCode"] = selected["value"] if selected else "N/A"
-
-    # 5. arrivalDate
-    ar_d = soup.find("input", {"name": "arrivalDate"})
-    if ar_d and ar_d.get("value"):
-        result["arrivalDate"] = ar_d["value"]
-
-    # 6. inBondType —— 修复：即使没有 selected，也取第一个 option
-    ibt = soup.find("select", {"name": "inBondType"})
-    if ibt:
-        selected = ibt.find("option", selected=True)
-        if selected:
-            result["inBondType"] = selected["value"]
+    if desktop_path:
+        txt_file_path = os.path.join(desktop_path, "yuejie.txt")
+        if not os.path.exists(txt_file_path):
+            update_output_text(output_text,"未找到output.txt\n")
+            pass
         else:
-            first_opt = ibt.find("option")
-            result["inBondType"] = first_opt["value"] if first_opt else "N/A"
+            cookies_dict = get_cookies_from_driver(driver)
+            with open(txt_file_path, 'w', encoding='utf-8') as txt_file:
+                txt_file.write(json.dumps({"cookies": cookies_dict}, ensure_ascii=False))
+            driver.quit()
+            sys.exit()  # 程序立即停止
     else:
-        result["inBondType"] = "N/A"
+        driver.quit()
+        sys.exit()  # 程序立即停止
+    update_output_text(output_text, "身份信息获取完成")
+    driver.quit()
+def netchb_query(account, password, output_text):
+    expiration_date = expiration_date1
+    now = datetime.now()
+    func_name = inspect.currentframe().f_code.co_name  # 自动获取当前函数名
 
-    # 7. saBtaAction —— 修复：同上
-    sabac = soup.find("select", {"name": "saBtaAction"})
-    if sabac:
-        selected = sabac.find("option", selected=True)
-        if selected:
-            result["saBtaAction"] = selected["value"]
+    if expiration_date and now > expiration_date:
+        if not is_user_allowed(func_name, account):
+            update_output_text(output_text, "程序已过期，请联系Larry获取更新版本。\n\n")
+            exit()
+
+
+    user_home = os.path.expanduser("~")
+    possible_paths = [
+        os.path.join(user_home, "Desktop"),
+        os.path.join(user_home, "桌面"),
+        os.path.join(user_home, "OneDrive", "Desktop"),
+        os.path.join(user_home, "OneDrive", "桌面")
+    ]
+
+    desktop_path = next((path for path in possible_paths if os.path.exists(path)), None)
+
+    if desktop_path:
+        file_path = os.path.join(desktop_path, "yuejie.xlsx")
+        if os.path.exists(file_path):
+            update_output_text(output_text,"已找到用于输出的excel文件即将继续代码\n\n")
+            # 继续后续代码...
         else:
-            first_opt = sabac.find("option")
-            result["saBtaAction"] = first_opt["value"] if first_opt else "N/A"
-    else:
-        result["saBtaAction"] = "N/A"
+            update_output_text(output_text,"未找到用于输出的excel文件，正在生成空的\n\n")
 
-    # ====================== 4. 输出结果 ======================
-    print(f"\n=== 单号 [{entry_no}] 解析结果 ===")
-    for key, value in result.items():
-        print(f"{key}: {value}")
-    print("=" * 40)
+            # 创建一个带表头的空 Excel 文件（可打开、可编辑）
+            empty_df = pd.DataFrame(columns=["Entry No"])  # 可根据需要修改列名
+            empty_df.to_excel(file_path, index=False, engine='openpyxl')
 
-    return result
+            update_output_text(output_text,f"已成功生成：{file_path}\n请打开文件填入数据后，重新运行程序。\n\n")
+            sys.exit()  # 程序停止，等待用户填数据
 
+    def read_cookies_from_txt():
+        txt_file_path = os.path.join(desktop_path, "yuejie.txt")
 
-def creat_entry_query(entry_no):
-    result = get_mawb_info(entry_no)
-    if "error" in result:
-        print(f"[Payload] 获取详情失败: {result['error']}，停止构建")
-        return None
-    payload = {
-        "entryActionCode": result.get("entryActionCode", ""),
-        "viaAce": result.get("viaAce", ""),
-        "cargoReleaseViaAce": result.get("cargoReleaseViaAce", ""),
-        "cargoReleaseActionCode": result.get("cargoReleaseActionCode", ""),
-        "disNumber": "",
-        "results": "true",
-        "arrivalDate": result.get("arrivalDate", ""),
-        "actionCode": "",
-        "inBondType": result.get("inBondType", ""),
-        "saBtaAction": result.get("saBtaAction", ""),
-        "ogaCode": "",
-        "method": "cargoManifestQuery",
-        "cmqQueryBy": "bol",
-        "extensionClosure": "",
-        "filerCode": "NXU",
-        "entryNo": entry_no
-    }
+        if not os.path.exists(txt_file_path):
+            update_output_text(output_text,"output.txt 文件不存在！\n")
+            return {}
 
-    from urllib.parse import urlencode
-    return urlencode(payload)
-
-
-def transmit_entry_request(entry_no):
-    cookies_dict = read_cookies_from_txt()
-    if not cookies_dict:
-        print("cookies 读取失败")
-        return None
-
-    payload_str = creat_entry_query(entry_no)
-    if payload_str is None:  # 失败返回 None
-        print("[Transmit] payload 构建失败，终止请求")
-        return None
-    session = requests.Session()
-    for name, value in cookies_dict.items():
-        session.cookies.set(name, value, domain="www.netchb.com", path="/")
-
-    # 生成 payload 字符串
-
-    headers = {
-        "Connection": "keep-alive",
-        "Content-Type": "application/x-www-form-urlencoded",  # 正确！
-        "Referer": f"https://www.netchb.com/app/entry/viewEntry.do?filerCode=NXU&entryNo={entry_no}",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "*/*",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Accept-Language": "zh-CN,zh;q=0.9"
-    }
-
-    url = "https://www.netchb.com/app/entry/transmit/transmitEntry.do"
-
-    try:
-        response = session.post(
-            url=url,
-            data=payload_str,  # 直接传 urlencoded 字符串
-            headers=headers,
-            timeout=30,
-            verify=False,
-            allow_redirects=False  # 保留 302 原始响应
-        )
-
-        print(f"[Transmit] 状态码: {response.status_code}")
-        print(f"[Transmit] Location: {response.headers.get('Location', 'N/A')}")
-        print(f"[Transmit] 响应长度: {len(response.text)}")
-
-        return session, response
-
-    except Exception as e:
-        print(f"[Transmit] 请求失败: {e}")
-        return None, None
-
-
-def get_query_number(entry_no):
-
-    cookies_dict = read_cookies_from_txt()
-    if not cookies_dict:
-        print("cookies 读取失败")
-        return None
-
-    result = transmit_entry_request(entry_no)
-    if not result:
-        print("[Query] transmit 失败，跳过查询 ID")
-        return None
-    session, transmit_resp = result  # 解包
-
-    for name, value in cookies_dict.items():
-        session.cookies.set(name, value, domain="www.netchb.com", path="/")
-
-    headers = {
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
-        "Pragma": "no-cache",
-        "Expires": "Wed, 31 Dec 1969 19:00:00 EST",
-        "Referer": f"https://www.netchb.com/app/entry/viewEntry.do?filerCode=NXU&entryNo={entry_no}",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Accept-Language": "zh-CN,zh;q=0.9"
-    }
-
-    url = "https://www.netchb.com/app/entry/entryMenu.do"
-    payload = {"checkResponse": ""}
-
-    try:
-        response = session.post(
-            url=url,
-            data=payload,
-            headers=headers,
-            timeout=30,
-            verify=False
-        )
-
-        print(f"[Menu Check] 状态码: {response.status_code}")
-        print(f"[Menu Check] 响应长度: {len(response.text)}")
-
-        # 尝试 JSON（备用）
         try:
-            json_data = response.json()
-            print("[Menu Check] 返回 JSON:")
-            print(json.dumps(json_data, indent=2, ensure_ascii=False))
-            return json_data
-        except:
-            pass  # 不是 JSON，继续解析 HTML
+            with open(txt_file_path, 'r', encoding='utf-8') as txt_file:
+                data = json.load(txt_file)
 
-        # 解析 HTML，找第一个 stMsg 开头的 td
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(response.text, 'html.parser')
-        st_msg_td = soup.find("td", id=lambda x: x and x.startswith("stMsg"))
+            raw_cookies = data.get("cookies", {})
+            if not isinstance(raw_cookies, dict):
+                update_output_text(output_text,"异常1")
+                return {}
 
-        if st_msg_td:
-            msg_id = st_msg_td["id"].replace("stMsg", "")
-            print(f"[Menu Check] 提取到的第一个 transmission ID: {msg_id}")
-            return msg_id
+            cookies_dict = {}
+            for name, info in raw_cookies.items():
+                if isinstance(info, dict) and 'value' in info:
+                    cookies_dict[name] = info['value']
+                else:
+                    cookies_dict[name] = str(info)
+
+            return cookies_dict
+
+        except json.JSONDecodeError as je:
+            update_output_text(output_text,f"网页解析失败！错误: {je}")
+            return {}
+        except Exception as e:
+            update_output_text(output_text,f"读取文本文件出错: {type(e).__name__}: {e}")
+            return {}
+
+    def get_mawb_info(entry_no, cookies):
+        cookies_dict = cookies
+        if not cookies_dict:
+            return {"error": "异常2"}
+
+        session = requests.Session()
+        for name, value in cookies_dict.items():
+            session.cookies.set(name, value, domain="www.netchb.com", path="/")
+
+        # Step 1: 访问菜单页保持会话
+        session.get("https://www.netchb.com/app/entry/entryMenu.do?checkResponse=true", verify=False)
+
+        # Step 2: POST 查询
+        payload = {
+            "filerCode": "NXU",
+            "entryNo": entry_no
+        }
+
+        headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "Accept-Encoding": "gzip, deflate, br, zstd",
+            "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Connection": "keep-alive",
+            "Host": "www.netchb.com",
+            "Referer": f"https://www.netchb.com/app/entry/viewEntry.do?filerCode=NXU&entryNo={entry_no}",
+            "Sec-Ch-Ua": '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+
+        try:
+            resp = session.post(
+                url="https://www.netchb.com/app/entry/transmit/finalizeEntry.do",
+                data=payload,
+                headers=headers,
+                timeout=30,
+                verify=False
+            )
+        except Exception as e:
+            update_output_text(output_text,"主单信息请求失败:", e)
+            return {k: "N/A" for k in [
+                "entryActionCode", "viaAce", "cargoReleaseViaAce",
+                "cargoReleaseActionCode", "arrivalDate", "inBondType", "saBtaAction"
+            ]}
+
+        if resp.status_code != 200 or "login" in resp.text.lower():
+            update_output_text(output_text,"异常3")
+            return {k: "N/A" for k in [
+                "entryActionCode", "viaAce", "cargoReleaseViaAce",
+                "cargoReleaseActionCode", "arrivalDate", "inBondType", "saBtaAction"
+            ]}
+
+        # ====================== 3. 解析 HTML ======================
+        soup = BeautifulSoup(resp.text, 'html.parser')
+
+        result = {
+            "entryActionCode": "N/A",
+            "viaAce": "N/A",
+            "cargoReleaseViaAce": "N/A",
+            "cargoReleaseActionCode": "N/A",
+            "arrivalDate": "N/A",
+            "inBondType": "N/A",
+            "saBtaAction": "N/A"
+        }
+
+        # 1. entryActionCode
+        eac = soup.find("select", {"name": "entryActionCode"})
+        if eac:
+            selected = eac.find("option", selected=True)
+            result["entryActionCode"] = selected["value"] if selected else "N/A"
+
+        # 2. viaAce (checkbox)
+        via_ace = soup.find("input", {"name": "viaAce"})
+        if via_ace and via_ace.get("checked") is not None:
+            result["viaAce"] = via_ace.get("value", "true")
+
+        # 3. cargoReleaseViaAce
+        crva = soup.find("input", {"name": "cargoReleaseViaAce"})
+        if crva and crva.get("checked") is not None:
+            result["cargoReleaseViaAce"] = crva.get("value", "true")
+
+        # 4. cargoReleaseActionCode
+        crar = soup.find("select", {"name": "cargoReleaseActionCode"})
+        if crar:
+            selected = crar.find("option", selected=True)
+            result["cargoReleaseActionCode"] = selected["value"] if selected else "N/A"
+
+        # 5. arrivalDate
+        ar_d = soup.find("input", {"name": "arrivalDate"})
+        if ar_d and ar_d.get("value"):
+            result["arrivalDate"] = ar_d["value"]
+
+        # 6. inBondType —— 修复：即使没有 selected，也取第一个 option
+        ibt = soup.find("select", {"name": "inBondType"})
+        if ibt:
+            selected = ibt.find("option", selected=True)
+            if selected:
+                result["inBondType"] = selected["value"]
+            else:
+                first_opt = ibt.find("option")
+                result["inBondType"] = first_opt["value"] if first_opt else "N/A"
         else:
-            print("[Menu Check] 未找到任何 stMsg 开头的 ID")
+            result["inBondType"] = "N/A"
+
+        # 7. saBtaAction —— 修复：同上
+        sabac = soup.find("select", {"name": "saBtaAction"})
+        if sabac:
+            selected = sabac.find("option", selected=True)
+            if selected:
+                result["saBtaAction"] = selected["value"]
+            else:
+                first_opt = sabac.find("option")
+                result["saBtaAction"] = first_opt["value"] if first_opt else "N/A"
+        else:
+            result["saBtaAction"] = "N/A"
+
+        # ====================== 4. 输出结果 ======================
+
+
+        return result
+
+    def creat_entry_query(entry_no, mawb_info):
+        result = mawb_info
+        if "error" in result:
+            update_output_text(output_text,f"异常4: {result['error']}，停止构建")
+            return None
+        payload = {
+            "entryActionCode": result.get("entryActionCode", ""),
+            "viaAce": result.get("viaAce", ""),
+            "cargoReleaseViaAce": result.get("cargoReleaseViaAce", ""),
+            "cargoReleaseActionCode": result.get("cargoReleaseActionCode", ""),
+            "disNumber": "",
+            "results": "true",
+            "arrivalDate": result.get("arrivalDate", ""),
+            "actionCode": "",
+            "inBondType": result.get("inBondType", ""),
+            "saBtaAction": result.get("saBtaAction", ""),
+            "ogaCode": "",
+            "method": "cargoManifestQuery",
+            "cmqQueryBy": "bol",
+            "extensionClosure": "",
+            "filerCode": "NXU",
+            "entryNo": entry_no
+        }
+
+        from urllib.parse import urlencode
+        return urlencode(payload)
+
+    def transmit_entry_request(entry_no, payload_information_query):
+        cookies_dict = read_cookies_from_txt()
+        if not cookies_dict:
+            update_output_text(output_text,"异常5")
             return None
 
-    except Exception as e:
-        print(f"[Menu Check] 请求失败: {e}")
-        return None
+        payload_str = payload_information_query
+        if payload_str is None:  # 失败返回 None
+            update_output_text(output_text,"异常6")
+            return None
+        session = requests.Session()
+        for name, value in cookies_dict.items():
+            session.cookies.set(name, value, domain="www.netchb.com", path="/")
+
+        # 生成 payload 字符串
+
+        headers = {
+            "Connection": "keep-alive",
+            "Content-Type": "application/x-www-form-urlencoded",  # 正确！
+            "Referer": f"https://www.netchb.com/app/entry/viewEntry.do?filerCode=NXU&entryNo={entry_no}",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "*/*",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Language": "zh-CN,zh;q=0.9"
+        }
+
+        url = "https://www.netchb.com/app/entry/transmit/transmitEntry.do"
+
+        try:
+            response = session.post(
+                url=url,
+                data=payload_str,  # 直接传 urlencoded 字符串
+                headers=headers,
+                timeout=30,
+                verify=False,
+                allow_redirects=False  # 保留 302 原始响应
+            )
 
 
 
+            return session, response
+
+        except Exception as e:
+            update_output_text(output_text,f"异常10: {e}")
+            return None, None
+
+    def get_query_number(entry_no, query_result):
+
+        cookies_dict = read_cookies_from_txt()
+        if not cookies_dict:
+            update_output_text(output_text,"异常11")
+            return None
+
+        result = query_result
+        if not result:
+            update_output_text(output_text,"异常12")
+            return None
+        session, transmit_resp = result  # 解包
+
+        for name, value in cookies_dict.items():
+            session.cookies.set(name, value, domain="www.netchb.com", path="/")
+
+        headers = {
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Pragma": "no-cache",
+            "Expires": "Wed, 31 Dec 1969 19:00:00 EST",
+            "Referer": f"https://www.netchb.com/app/entry/viewEntry.do?filerCode=NXU&entryNo={entry_no}",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Language": "zh-CN,zh;q=0.9"
+        }
+
+        url = "https://www.netchb.com/app/entry/entryMenu.do"
+        payload = {"checkResponse": ""}
+
+        try:
+            response = session.post(
+                url=url,
+                data=payload,
+                headers=headers,
+                timeout=30,
+                verify=False
+            )
 
 
 
+            # 尝试 JSON（备用）
+            try:
+                json_data = response.json()
+                return json_data
+            except:
+                pass  # 不是 JSON，继续解析 HTML
+
+            # 解析 HTML，找第一个 stMsg 开头的 td
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(response.text, 'html.parser')
+            st_msg_td = soup.find("td", id=lambda x: x and x.startswith("stMsg"))
+
+            if st_msg_td:
+                msg_id = st_msg_td["id"].replace("stMsg", "")
+                return msg_id
+            else:
+                update_output_text(output_text,"异常13")
+                return None
+
+        except Exception as e:
+            update_output_text(output_text,f"异常14: {e}")
+            return None
+
+    def is_result_not_received(response_text):
+        """
+        检查响应文本中是否包含“Not Received”关键词。
+        """
+        return "Not Received" in response_text
+
+    # ==============================================================================
+    # 修改函数 (MODIFIED FUNCTIONS)
+    # ==============================================================================
+    ERROR_TIMEOUT_MSG = "query 超时没拿到结果"  # 超时失败时的错误信息
+    PORT_MISSING_ERROR = "Port Not Found"  # 港口信息提取失败时的内部标记
+
+    def view_query_result(entry_no, query_id):
+        """
+        查看查询结果，统计代码数量，提取港口信息，并检查 DOCUMENT REQUIRED 关键词。
+        返回: (counts: list, manifested_port: str, actual_port: str, is_document_required: bool, response_text: str)
+        """
+        # 1. cookies
+        cookies_dict = read_cookies_from_txt()
+        if not cookies_dict:
+            update_output_text(output_text,"异常15")
+            return ["error"] * 8, PORT_MISSING_ERROR, PORT_MISSING_ERROR, False, ""
+
+        # 2. transmission_id
+        transmission_id = query_id
+        if not transmission_id or isinstance(transmission_id, dict):
+            update_output_text(output_text,"异常16")
+            return ["error"] * 8, PORT_MISSING_ERROR, PORT_MISSING_ERROR, False, ""
+
+        # 3. 请求
+        session = requests.Session()
+        for name, value in cookies_dict.items():
+            session.cookies.set(name, value, domain="www.netchb.com", path="/")
+
+        headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br, zstd",
+            "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Connection": "keep-alive",
+            "Host": "www.netchb.com",
+            "Sec-Ch-Ua": '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+
+        url = "https://www.netchb.com/app/transmissions/viewTransmission.do"
+        payload = {"id": transmission_id}
+
+        try:
+            response = session.get(url=url, params=payload, headers=headers, timeout=30, verify=False)
+            text = response.text
+
+            if response.status_code != 200:
+                update_output_text(output_text,f"异常17: {response.status_code}")
+                return ["error"] * 8, PORT_MISSING_ERROR, PORT_MISSING_ERROR, False, text
+
+            # 1. 统计代码数量 (Count codes)
+            codes = ["1H", "2H", "5H", "9H", "3H", "1A", "4A", "1Y"]
+            counts = [text.count(code) for code in codes]
+
+            # 2. 提取港口数据 (Extract port data)
+            manifested_port_match = re.search(r'Manifested Port of Unlading/Import:\s*(\d+)', text)
+            actual_port_match = re.search(r'Actual Port of Unlading/Import:\s*(\d+)', text)
+
+            # 如果提取失败，返回 PORT_MISSING_ERROR
+            manifested_port = manifested_port_match.group(1).strip() if manifested_port_match else PORT_MISSING_ERROR
+            actual_port = actual_port_match.group(1).strip() if actual_port_match else PORT_MISSING_ERROR
+
+            # 3. 检查 DOCUMENT REQUIRED (Check for DOCUMENT REQUIRED)
+            is_document_required = "DOCUMENT REQUIRED" in text
 
 
-def view_query_result(entry_no):
-    # 1. cookies
-    cookies_dict = read_cookies_from_txt()
-    if not cookies_dict:
-        print("[View] cookies 读取失败")
-        return ["error"] * 8
+            # 成功返回 (counts, manifested_port, actual_port, is_document_required, response_text)
+            return counts, manifested_port, actual_port, is_document_required, text
 
-    # 2. transmission_id
-    transmission_id = get_query_number(entry_no)
+        except Exception as e:
+            update_output_text(output_text,f"异常18: {e}")
+            # 返回 8 个 error 标志和 Port Not Found 港口
+            return ["error"] * 8, PORT_MISSING_ERROR, PORT_MISSING_ERROR, False, ""
 
-    if not transmission_id or isinstance(transmission_id, dict):
-        print("[View] 未能获取有效 transmission_id")
-        return ["error"] * 8
+    def get_invoice_id_from_entry(entry_no):
+        """
+        获取发票 ID。函数体保持不变。
+        """
+        cookies_dict = read_cookies_from_txt()
+        if not cookies_dict:
+            return None
 
-    # 3. 请求
-    session = requests.Session()
-    for name, value in cookies_dict.items():
-        session.cookies.set(name, value, domain="www.netchb.com", path="/")
+        session = requests.Session()
+        for name, value in cookies_dict.items():
+            session.cookies.set(name, value, domain="www.netchb.com", path="/")
 
-    headers = {
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br, zstd",
-        "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Connection": "keep-alive",
-        "Host": "www.netchb.com",
-        "Sec-Ch-Ua": '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Sec-Ch-Ua-Platform": '"Windows"',
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
-        "Upgrade-Insecure-Requests": "1",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    }
+        headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "Accept-Encoding": "gzip, deflate, br, zstd",
+            "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Connection": "keep-alive",
+            "Host": "www.netchb.com",
+            "Referer": "https://www.netchb.com/app/entry/processViewEntries.do",
+            "Sec-Ch-Ua": '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
+        }
 
-    url = "https://www.netchb.com/app/transmissions/viewTransmission.do"
-    payload = {"id": transmission_id}
+        url = f"https://www.netchb.com/app/entry/viewEntry.do?filerCode=NXU&entryNo={entry_no}"
+        payload = {"filerCode": "NXU", "entryNo": entry_no}
 
-    try:
-        response = session.get(url=url, params=payload, headers=headers, timeout=30, verify=False)
-        if response.status_code != 200:
-            print(f"[View] 请求失败，状态码: {response.status_code}")
-            return ["error"] * 8
+        try:
+            response = session.post(url=url, data=payload, headers=headers, timeout=30, verify=False)
+            soup = BeautifulSoup(response.text, 'html.parser')
 
-        text = response.text
-        codes = ["1H", "2H", "1A", "4A", "1I", "2I", "1B", "4B"]
-        counts = [text.count(code) for code in codes]
+            # 方法 1: 从 <tr id="iRow1246024201">
+            irow_tr = soup.find("tr", id=re.compile(r"^iRow\d+$"))
+            if irow_tr:
+                invoice_id = irow_tr["id"].replace("iRow", "")
+                return invoice_id
 
-        print(f"[View] 统计结果: {counts}")
-        return counts  # 成功返回 [n1, n2, ..., n8]
+            # 方法 2: 从 href="...invoiceId=1246024201..."
+            a_tag = soup.find("a", href=re.compile(r"invoiceId=\d+"))
 
-    except Exception as e:
-        print(f"[View] 请求异常: {e}")
-        return ["error"] * 8
+            if a_tag:
+                match = re.search(r"invoiceId=(\d+)", a_tag["href"])
+                if match:
+                    invoice_id = match.group(1)
+                    return invoice_id
 
+            return None
 
+        except Exception as e:
+            update_output_text(output_text,f"异常19: {e}")
+            return None
 
-
-
-
-def get_invoice_id_from_entry(entry_no):
-    """
-    输入: entry_no (str)
-    输出: invoice_id (str) 或 None
-    从 response.text 中提取 iRow1246024201 或 href 中的 invoiceId=1246024201
-    """
-    cookies_dict = read_cookies_from_txt()
-    if not cookies_dict:
-        return None
-
-    session = requests.Session()
-    for name, value in cookies_dict.items():
-        session.cookies.set(name, value, domain="www.netchb.com", path="/")
-
-    headers = {
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-        "Accept-Encoding": "gzip, deflate, br, zstd",
-        "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Connection": "keep-alive",
-        "Host": "www.netchb.com",
-        "Referer": "https://www.netchb.com/app/entry/processViewEntries.do",
-        "Sec-Ch-Ua": '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Sec-Ch-Ua-Platform": '"Windows"',
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "same-origin",
-        "Sec-Fetch-User": "?1",
-        "Upgrade-Insecure-Requests": "1",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
-    }
-
-    # 你原来的 URL 也行，只要 response 有 iRow 或 href
-    url = f"https://www.netchb.com/app/entry/viewEntry.do?filerCode=NXU&entryNo={entry_no}"
-    payload = {"filerCode": "NXU", "entryNo": entry_no}
-
-    try:
-        response = session.post(url=url, data=payload, headers=headers, timeout=30, verify=False)
-
-
-
-        soup = BeautifulSoup(response.text, 'html.parser')
-
-        # 方法 1: 从 <tr id="iRow1246024201">
-        irow_tr = soup.find("tr", id=re.compile(r"^iRow\d+$"))
-        if irow_tr:
-            invoice_id = irow_tr["id"].replace("iRow", "")
-            return invoice_id
-
-        # 方法 2: 从 href="...invoiceId=1246024201..."
-        a_tag = soup.find("a", href=re.compile(r"invoiceId=\d+"))
-        if a_tag:
-            invoice_id = re.search(r"invoiceId=(\d+)", a_tag["href"]).group(1)
-            return invoice_id
-
-        return None
-
-    except Exception as e:
-        return None
-
-def get_manufacturer_from_invoice(entry_no):
-    cookies_dict = read_cookies_from_txt()
-    if not cookies_dict:
-        print("cookies 读取失败")
-        return "error"
-
-    invoice_id=get_invoice_id_from_entry(entry_no)
-    if not invoice_id:
-        print("invoice_id 读取失败")
-        return "error"
-    session = requests.Session()
-    for name, value in cookies_dict.items():
-        session.cookies.set(name, value, domain="www.netchb.com", path="/")
-
-    headers = {
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-        "Accept-Encoding": "gzip, deflate, br, zstd",
-        "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Connection": "keep-alive",
-        "Host": "www.netchb.com",
-        "Referer": f"https://www.netchb.com/app/entry/viewEntry.do?filerCode=NXU&entryNo={entry_no}",
-        "Sec-Ch-Ua": '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Sec-Ch-Ua-Platform": '"Windows"',
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "same-origin",
-        "Sec-Fetch-User": "?1",
-        "Upgrade-Insecure-Requests": "1",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
-    }
-
-    url = f"https://www.netchb.com/app/entry/invoice/editInvoice.do?method=viewInvoice&invoiceId=1246024201&filerCode=NXU&entryNo={entry_no}"
-    payload = {
-        "method": "viewInvoice",
-        "invoiceId": invoice_id,
-        "filerCode": "NXU",
-        "entryNo": entry_no
-    }
-
-    try:
-        response = session.post(url=url, data=payload, headers=headers, timeout=30, verify=False)
-        print(f"[Get Manufacturer] 状态码: {response.status_code}")
-        print(f"[Get Manufacturer] 响应长度: {len(response.text)}")
-        print("-" * 100)
-        print(response.text)  # 完整打印 HTML
-        print("-" * 100)
-
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(response.text, 'html.parser')
-        line_tr = soup.find("tr", class_="light")
-        if not line_tr:
-            print("[Get Manufacturer] 未找到 tr.light")
+    def get_manufacturer_from_invoice(entry_no, invoice_id):
+        """获取制造商信息。函数体保持不变。"""
+        cookies_dict = read_cookies_from_txt()
+        if not cookies_dict:
+            update_output_text(output_text,"异常20")
             return "error"
 
-        tds = line_tr.find_all("td")
-        if len(tds) < 9:
-            print(f"[Get Manufacturer] td 数量不足: {len(tds)}")
+        if not invoice_id:
+            update_output_text(output_text,"异常21")
             return "error"
 
-        manufacturer = tds[8].get_text(strip=True)
-        print(f"[Get Manufacturer] 提取到的 Manufacturer: {manufacturer}")
-        return manufacturer
+        session = requests.Session()
+        for name, value in cookies_dict.items():
+            session.cookies.set(name, value, domain="www.netchb.com", path="/")
 
+        headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "Accept-Encoding": "gzip, deflate, br, zstd",
+            "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Connection": "keep-alive",
+            "Host": "www.netchb.com",
+            "Referer": f"https://www.netchb.com/app/entry/viewEntry.do?filerCode=NXU&entryNo={entry_no}",
+            "Sec-Ch-Ua": '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
+        }
+
+        url = f"https://www.netchb.com/app/entry/invoice/editInvoice.do?method=viewInvoice&invoiceId={invoice_id}&filerCode=NXU&entryNo={entry_no}"
+
+        payload = {
+            "method": "viewInvoice",
+            "invoiceId": invoice_id,
+            "filerCode": "NXU",
+            "entryNo": entry_no
+        }
+
+        try:
+            response = session.post(url=url, data=payload, headers=headers, timeout=30, verify=False)
+
+            soup = BeautifulSoup(response.text, 'html.parser')
+            line_tr = soup.find("tr", class_="light")
+            if not line_tr:
+                update_output_text(output_text,"异常22")
+                return "error"
+
+            tds = line_tr.find_all("td")
+            if len(tds) < 9:
+                update_output_text(output_text,f"[异常23 {len(tds)}")
+                return "error"
+
+            manufacturer = tds[8].get_text(strip=True)
+            return manufacturer
+
+        except Exception as e:
+            update_output_text(output_text,f"异常25 {e}")
+            return "error"
+
+    # ==============================================================================
+    # 主执行逻辑 (MAIN EXECUTION LOGIC)
+    # ==============================================================================
+
+    # 1. 模拟读取 Excel 文件
+    try:
+        df = pd.read_excel(file_path, engine='openpyxl')
+        entry_nos = df.iloc[:, 0].astype(str).str.strip().tolist()
+        update_output_text(output_text,f"成功读取 {len(entry_nos)} 个单号。")
     except Exception as e:
-        print(f"[Get Manufacturer] 请求失败: {e}")
-        return "error"
+        update_output_text(output_text,f"读取 Excel 文件时发生错误: {e}")
+        entry_nos = []
+
+    # 初始化列表
+    results = []
+    pending_queries = []
+    TIMEOUT_SECONDS = 10 * 60  # 10 分钟超时
+    RETRY_DELAY_SECONDS = 10  # 10 秒重试间隔
+
+    # --- PHASE 1: QUERY SUBMISSION (批量提交查询，不等待结果) ---
 
 
-df = pd.read_excel(file_path, header=None, engine='openpyxl')
-entry_nos = df[0].astype(str).tolist()
+    for entry_no in entry_nos:
+        prefixed_no = f"2{entry_no}"
 
-# 2. 处理每个单号（在单号前加 2）
-results = []
-for no in entry_nos:
-    prefixed_no = f"2{no}"  # <--- 这里在前面加 2
-    print(f"处理 {prefixed_no}...")
+        try:
+            # 1. 首次查询准备 (Initial Query Preparation)
+            cookies = read_cookies_from_txt()
+            mawb_info = get_mawb_info(prefixed_no, cookies)
+            payload_information_query = creat_entry_query(prefixed_no, mawb_info)
+            query_result = transmit_entry_request(prefixed_no, payload_information_query)
+            query_id = get_query_number(prefixed_no, query_result)
 
-    transmit_entry_request(prefixed_no)  # Step 1
-    counts = view_query_result(prefixed_no)  # Step 2: 返回 8 个 count
-    manu = get_manufacturer_from_invoice(prefixed_no) or "N/A"  # Step 3
+            if not query_id or query_id == "error":
+                raise ValueError("无法获取有效的 Query ID")
 
-    # 结果行：原始单号 + counts（或 N/A） + manufacturer
-    result_row = [no] + (counts if counts != ["error"] * 8 else ["N/A"] * 8) + [manu]
-    results.append(result_row)
+            # 成功，加入等待列表
+            pending_queries.append({'entry_no': entry_no, 'prefixed_no': prefixed_no, 'query_id': query_id})
 
-# 3. 写 Excel（9 列：单号 + 8个代码 + manufacturer）
-pd.DataFrame(results, columns=[
-    "entry_no", "1H","2H","1A","4A","1I","2I","1B","4B", "manufacturer"
-]).to_excel(file_path, index=False)
+        except Exception as e:
+            update_output_text(output_text,f"[{prefixed_no}] 异常27 {e}")
+            error_msg = f"查询准备失败: {e}"
+            # 记录查询准备失败，使用错误信息填充所有结果列
+            # 字段顺序: entry_no + counts(8) + manifested_port + actual_port + manufacturer + status
+            results.append([entry_no] + [error_msg] * 8 + [error_msg] + [error_msg] + [error_msg] + ["query 失败"])
 
+    # --- PHASE 2: RESULT RETRIEVAL (逐个查询结果，带重试/超时) ---
+
+
+    for item in pending_queries:
+        entry_no = item['entry_no']
+        prefixed_no = item['prefixed_no']
+        query_id = item['query_id']
+
+
+
+        # 循环重试 view_query_result (Retry loop for view_query_result)
+        start_time = time.time()
+        # 初始化所有结果组件为超时/错误状态
+        counts = [ERROR_TIMEOUT_MSG] * 8
+        manifested_port = ERROR_TIMEOUT_MSG
+        actual_port = ERROR_TIMEOUT_MSG
+        manu = ERROR_TIMEOUT_MSG
+        is_document_required = False
+        query_success = False
+
+        while time.time() - start_time < TIMEOUT_SECONDS:
+            time_elapsed = int(time.time() - start_time)
+            update_output_text(output_text,f"[{prefixed_no}] 尝试获取查询结果 (已耗时: {time_elapsed}s / {TIMEOUT_SECONDS}s)")
+
+            # 2a. 获取 counts, ports, doc_required 和原始响应文本
+            current_counts, m_port, a_port, doc_required, response_text = view_query_result(prefixed_no, query_id)
+
+            # 2b. 检查是否成功
+            # 成功条件：counts 中不含 "error" 且 响应文本中不含 "Not Received"
+            if "error" not in current_counts and not is_result_not_received(response_text):
+                update_output_text(output_text,f"[{prefixed_no}] 查询结果成功获取。")
+
+                # 2c. 存储成功获取的数据并尝试获取 manufacturer
+                counts = current_counts
+                manifested_port = m_port
+                actual_port = a_port
+                is_document_required = doc_required
+
+                # --- 获取 Manufacturer (移到结果获取成功后) ---
+                invoice_id = get_invoice_id_from_entry(prefixed_no)
+                temp_manu = get_manufacturer_from_invoice(prefixed_no, invoice_id)
+
+                if invoice_id is None:
+                    manu = "N/A (无发票ID)"
+                elif temp_manu == "error":
+                    manu = "Manufacturer获取失败"
+                else:
+                    manu = temp_manu
+                # ---------------------------------------------
+
+                query_success = True
+                break
+            elif "error" in current_counts:
+                update_output_text(output_text,f"[{prefixed_no}] 请求出错，等待重试...")
+            elif is_result_not_received(response_text):
+                update_output_text(output_text,f"[{prefixed_no}] 结果未就绪，等待 {RETRY_DELAY_SECONDS} 秒后重试...")
+            else:
+                update_output_text(output_text,f"[{prefixed_no}] 未知失败，等待 {RETRY_DELAY_SECONDS} 秒后重试...")
+
+            # 2d. 等待重试
+            time.sleep(RETRY_DELAY_SECONDS)
+
+        # 3. 计算最终状态 (Calculate final status)
+        if not query_success:
+            update_output_text(output_text,f"[{prefixed_no}] 达到 {TIMEOUT_SECONDS} 秒超时，未能获取最终结果。")
+            final_status = "query 失败"
+        else:
+            # 检查港口信息提取是否失败（满足用户新增要求）
+            if manifested_port == PORT_MISSING_ERROR:
+                final_status = "query 失败"
+                update_output_text(output_text,f"[{prefixed_no}] 港口信息提取失败（Manifested Port 或 Actual Port 缺失），状态设置为 'query 失败'。")
+                # 确保 port 列的数据被记录为 '提取失败'
+                if manifested_port == PORT_MISSING_ERROR: manifested_port = "提取失败"
+                if actual_port == PORT_MISSING_ERROR: actual_port = "提取失败"
+
+            # 4. 根据成功获取的数据计算最终状态，排除 1Y 的其他数量 (0-6 索引)
+            elif manifested_port != actual_port and actual_port != PORT_MISSING_ERROR:
+                final_status = "port 不同"
+            # 检查 1H, 2H, 5H, 9H, 3H, 1A, 4A 中是否有非零数量，或是否有 DOCUMENT REQUIRED 关键词
+            else:
+                # 检查是否为 int 类型，避免 'error' 参与比较
+                check_counts = [c for c in counts[:7] if isinstance(c, int) and c >= 0]
+                if any(c > 0 for c in check_counts) or is_document_required:
+                    final_status = "有扣货"
+                else:
+                    final_status = "Y"
+
+        # 5. 记录最终结果
+        # 结果行：entry_no + counts (8) + manifested_port (1) + actual_port (1) + manu (1) + final_status (1)
+        result_row = [entry_no] + counts + [manifested_port] + [actual_port] + [manu] + [final_status]
+        results.append(result_row)
+
+    # 3. 写 Excel (Write to Excel)
+    # 新的列顺序和名称：
+    COLUMNS = [
+        "entry_no", "1H", "2H", "5H", "9H", "3H", "1A", "4A", "1Y",
+        "Manifested Port", "Actual Port", "manufacturer", "status"
+    ]
+    df_result = pd.DataFrame(results, columns=COLUMNS)
+
+    # 写入 Excel
+    try:
+        df_result.to_excel(file_path, index=False)
+        update_output_text(output_text,f"\n处理完成！结果已保存：{file_path}")
+    except Exception as e:
+        update_output_text(output_text,f"\n写入 Excel 文件失败: {e}")
+    update_output_text(output_text,"程序完成")
+def netchb_entry_update(account, password, output_text):
+    user_home = os.path.expanduser("~")
+    possible_paths = [
+        os.path.join(user_home, "Desktop"),
+        os.path.join(user_home, "桌面"),
+        os.path.join(user_home, "OneDrive", "Desktop"),
+        os.path.join(user_home, "OneDrive", "桌面")
+    ]
+
+    desktop_path = next((path for path in possible_paths if os.path.exists(path)), None)
+
+    if desktop_path:
+        file_path = os.path.join(desktop_path, "yuejie.xlsx")
+        if os.path.exists(file_path):
+            update_output_text(output_text,"已找到需要的excel，正在继续代码\n")
+            pass
+        else:
+            # 创建空的 Excel 文件
+            update_output_text(output_text, "已找到excel 正在继续代码\n")
+
+            wb = Workbook()
+            wb.save(file_path)
+            sys.exit()  # 程序立即停止
+    else:
+        sys.exit()  # 程序立即停止
+
+    chrome_options = webdriver.ChromeOptions()
+    chrome_options.add_argument("--start-maximized")  # 启动时最大化
+    chrome_options.add_argument("--disable-gpu")  # 解决某些系统的图形渲染问题
+    chrome_options.add_argument("--no-sandbox")  # 非root用户需要此参数
+    chrome_options.add_argument("--disable-dev-shm-usage")  # 避免某些共享内存问题
+    chrome_options.add_argument("--always-on-top")  # 窗口置顶 (实验性参数)
+    chrome_options.add_argument("--force-device-scale-factor=0.5")  # 设置缩放比例为50%
+
+    # 启动 Chrome 浏览器并加载已保存的用户数据
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    driver.set_window_size(1920, 1080)
+
+    # 通过 JavaScript 强制设置缩放比例
+    driver.get("https://www.google.com")
+    driver.execute_script("document.body.style.zoom='50%'")
+    url = "https://www.netchb.com/app/entry/"
+    driver.get(url)
+    driver.maximize_window()  # 最大化窗口
+
+    all_tabs = driver.window_handles
+
+    # 遍历所有窗口，关闭不需要的 "data:" 标签页
+    for tab in all_tabs:
+        driver.switch_to.window(tab)
+        if "data:" in driver.current_url:
+            driver.close()  # 关闭 "data:" 标签页
+
+    # 重新获取当前所有窗口句柄
+    all_tabs = driver.window_handles
+
+    # 如果有剩余窗口，切换到第一个
+    if all_tabs:
+        driver.switch_to.window(all_tabs[0])
+
+
+    # # 输入账号和密码
+    username = account  # 替换为实际账号
+    password = password  # 替换为实际密码
+
+    # 定位到账号和密码输入框
+    username_field = driver.find_element(By.XPATH, '//*[@id="lName"]')
+    username_field.clear()  # 清除输入框中的任何内容
+    username_field.send_keys(username)  # 输入用户名
+
+    # 输入密码
+    password_field = driver.find_element(By.XPATH, '//*[@id="pass"]')
+    password_field.clear()  # 清除输入框中的任何内容
+    password_field.send_keys(password)  # 输入密码
+
+    # 点击登录按钮
+    login_button = driver.find_element(By.XPATH,
+                                       "/html/body/div[2]/div[3]/div/main/div/div/div/article/div/div/form/div[2]/input")
+    login_button.click()
+    initial_title = driver.title
+    initial_url = driver.current_url
+    url = "https://www.netchb.com/app/entry/"
+    driver.get(url)
+
+    def read_cookies_from_txt():
+        txt_file_path = os.path.join(desktop_path, "yuejie.txt")
+
+        if not os.path.exists(txt_file_path):
+            update_output_text(output_text,"output.txt 文件不存在！\n")
+            return {}
+
+        try:
+            with open(txt_file_path, 'r', encoding='utf-8') as txt_file:
+                data = json.load(txt_file)
+
+            raw_cookies = data.get("cookies", {})
+            if not isinstance(raw_cookies, dict):
+                update_output_text(output_text,"异常1")
+                return {}
+
+            cookies_dict = {}
+            for name, info in raw_cookies.items():
+                if isinstance(info, dict) and 'value' in info:
+                    cookies_dict[name] = info['value']
+                else:
+                    cookies_dict[name] = str(info)
+
+            return cookies_dict
+
+        except json.JSONDecodeError as je:
+            update_output_text(output_text,f"网页解析失败！错误: {je}")
+            return {}
+        except Exception as e:
+            update_output_text(output_text,f"读取文本文件出错: {type(e).__name__}: {e}")
+            return {}
+
+    def get_mawb_info(entry_no, cookies, result_dict):
+        session = requests.Session()
+
+        # 强制设置 cookie（两个域名都设一遍，保险）
+        for name, value in cookies.items():
+            session.cookies.set(name, value, domain="www.netchb.com", path="/")
+            session.cookies.set(name, value, domain=".netchb.com", path="/")
+
+        headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br, zstd",
+            "Accept-Language": "zh-CN,zh;q=0.9",
+            "Cache-Control": "max-age=0",
+            "Connection": "keep-alive",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Origin": "https://www.netchb.com",
+            "Referer": "https://www.netchb.com/app/entry/processViewEntries.do",
+            "Upgrade-Insecure-Requests": "1",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+        }
+
+        payload = {
+            "entryNoSearch": str(entry_no),
+            "searchTimePeriod": "Y1", "user": "NXUAUTO", "location": "4755",
+            "noPerPage": "50", "orderBy": "vep1", "page": "0", "method": "view"
+        }
+
+        try:
+            resp = session.post(
+                "https://www.netchb.com/app/entry/processViewEntries.do",
+                data=payload, headers=headers, timeout=30, verify=False
+            )
+        except Exception as e:
+            result_dict[entry_no] = {"7501": "NET_ERR", "3461": "NET_ERR"}
+            return
+
+        if resp.status_code != 200 or "login" in resp.text.lower():
+            result_dict[entry_no] = {"7501": "LOGIN", "3461": "LOGIN"}
+            return
+
+        # ====================== 终极核弹：正则 + BeautifulSoup 双管齐下 ======================
+        text = resp.text
+
+        # 方法1：正则直接暴力抠（最稳）
+        pattern = rf'value=["\']{entry_no}["\'][^>]*>.*?<td class="status allClear">([^<]+)</td>.*?<td class="status allClear">([^<]+)</td>'
+        match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+
+        if match:
+            status_7501 = match.group(1).strip()
+            status_3461 = match.group(2).strip()
+            result_dict[entry_no] = {"7501": status_7501, "3461": status_3461}
+            print(f"{entry_no} → 成功（正则） → 7501: {status_7501} | 3461: {status_3461}")
+            return
+
+        # 方法2：如果正则没抓到，用 BS4 再试一次
+        soup = BeautifulSoup(text, "html.parser")  # 改回最稳定的 html.parser
+        input_tag = soup.find("input", {"value": str(entry_no)})
+        if input_tag:
+            tr = input_tag.find_parent("tr")
+            if tr:
+                cells = tr.find_all("td", class_="status allClear")
+                if len(cells) >= 2:
+                    result_dict[entry_no] = {
+                        "7501": cells[0].get_text(strip=True),
+                        "3461": cells[1].get_text(strip=True)
+                    }
+                    print(f"{entry_no} → 成功（BS4） → 7501: {cells[0].text.strip()} | 3461: {cells[1].text.strip()}")
+                    return
+
+        # 如果两个方法都失败，直接把整段 HTML 打印出来让你看
+        print(f"\n【{entry_no} 抓取失败】以下是原始页面片段（请你自己找 status allClear 在哪）：")
+        print(text[text.find(str(entry_no)) - 200: text.find(str(entry_no)) + 800])
+        result_dict[entry_no] = {"7501": "未提取到", "3461": "未提取到"}
+
+
+    def wait_and_click(driver, xpath, timeout=3, interval=0.5):
+        """
+        尝试 timeout 秒，每 interval 秒检查元素是否出现并点击
+        返回 True（点击成功）或 False（超时未点击）
+        """
+        end_time = time.time() + timeout
+
+        while time.time() < end_time:
+            try:
+                element = driver.find_element(By.XPATH, xpath)
+                element.click()
+                return True
+            except:
+                time.sleep(interval)
+        return False
+
+    df = pd.read_excel(file_path, engine='openpyxl', dtype=str)  # ← 改这里，加 dtype=str 防止数字变科学计数
+
+    # 2. 过滤完后，把原始行索引保存下来（加在这两行下面就行）
+    df_filtered = df[df.iloc[:, 12].astype(str).str.strip() == 'Y']
+    original_indices = df_filtered.index.tolist()  # ← 新增这行# 过滤第十列为 'Y' 的行
+
+    # 提取第一列（entry_nos）
+    entry_nos = df_filtered.iloc[:, 0].astype(str).str.strip().tolist()
+    # 提取第十列（manufacture_list），注意这里都是 'Y'
+    manufacture_list = df_filtered.iloc[:, 11].astype(str).str.strip().tolist()
+    # 2. 处理每个单号（在单号前加 2）
+    update_output_text(output_text,f'entry都有:{entry_nos}')
+
+    def main_function(entry_no, manufacture):
+        prefixed_no = f"2{entry_no}"  # <--- 这里在前面加 2
+        driver.get(f'https://www.netchb.com/app/entry/isf.do?filerCode=NXU&entryNo={prefixed_no}')
+        mf_input = WebDriverWait(driver, 10).until(
+            EC.visibility_of_element_located((By.XPATH, '//*[@id="sMd0"]'))
+        )
+        mf_input.clear()
+        mf_input.send_keys(manufacture)
+        click = wait_and_click(driver, '//*[@id="mfcCRow0"]')
+        option = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "#cfrm1 option[value='consignee']"))
+        )
+        # 选中 consignee
+        select_element = driver.find_element(By.ID, "cfrm1")
+        select = Select(select_element)
+        select.select_by_value("consignee")
+        time.sleep(20)
+        save_button = driver.find_element(By.XPATH,
+                                          '//*[@id="entF"]/div[11]/input[1]')
+        save_button.click()
+
+        driver.get(f'https://www.netchb.com/app/entry/transmit/finalizeEntry.do?filerCode=NXU&entryNo={prefixed_no}')
+        transmit_button = driver.find_element(By.XPATH,
+                                              '//*[@id="t0"]/input[1]')
+        transmit_button.click()
+
+
+
+
+    result_dict = {}
+    # for idx, entry_no, manufacture in zip(original_indices, entry_nos, manufacture_list):
+    if '7501_status' not in df.columns:
+        df['7501_status'] = ''  # 用来放 7501 状态（会出现在第 15 列或你想要的位置）
+    if '3461_status' not in df.columns:
+        df['3461_status'] = ''  # 用来放 3461 状态
+
+    for idx, entry_no, manufacture in zip(original_indices, entry_nos, manufacture_list):
+        success = False
+        for attempt in range(2):
+            try:
+                main_function(entry_no, manufacture)
+                update_output_text(output_text, f"{entry_no} 处理成功")
+                success = True
+                break  # 成功就跳出重试循环
+            except Exception as e:
+                if attempt == 0:
+                    update_output_text(output_text, f"{entry_no} 第1次失败: {e}，1秒后重试...")
+                    time.sleep(1)
+                else:
+                    update_output_text(output_text, f"{entry_no} 第2次也失败，标记为失败")
+                    df.loc[idx, df.columns[13]] = "netchb 没能成功选取"  # 第14列（N列）标记失败
+                    success = False
+
+        # 如果两次都失败，也要保证有标记（上面的 else 已经写了，这里再保一次）
+        if not success:
+            df.loc[idx, df.columns[13]] = "工厂信息没能成功选取，没有点击transmit"
+
+        # ------------------- 前面 Selenium 部分结束，等 2 秒再去查状态 -------------------
+        driver.get('https://www.netchb.com/app/entry/index.jsp')
+        time.sleep(2)
+
+        # ------------------- 读取 cookies 并抓取 7501 / 3461 状态 -------------------
+        cookies = read_cookies_from_txt()
+        get_mawb_info(entry_no, cookies, result_dict)
+
+        # ------------------- 把抓到的状态写回 Excel 第15、16列 -------------------
+        if entry_no in result_dict:
+            st = result_dict[entry_no]
+            df.loc[idx, '7501_status'] = st.get("7501", "N/A")  # 第15列（O列）
+            df.loc[idx, '3461_status'] = st.get("3461", "N/A")  # 第16列（P列）
+        else:
+            df.loc[idx, '7501_status'] = "查询失败"
+            df.loc[idx, '3461_status'] = "查询失败"
+
+    # ------------------- 全部处理完毕，一次性保存 Excel -------------------
+    update_output_text(output_text, df)
+    df.to_excel(file_path, index=False, engine='openpyxl')
+    update_output_text(output_text, "处理完毕！\n")
+
+
+
+import customtkinter as ctk
+from tkinter import messagebox
+import threading
+
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
+
+# 用于停止线程的事件
+stop_event = threading.Event()
+
+
+def start_program(account, password, output_text, task_type, mode=None):
+    stop_event.clear()  # 清除停止事件，准备开始任务
+
+    if task_type == "netchb larry服务器链接（4小时一次）":
+        netchb_token(account, password, output_text)
+    elif task_type == "query目标单号":
+        netchb_query(account, password, output_text)
+    elif task_type == "netchb上传":
+        netchb_entry_update(account, password, output_text)
+    # 登录界面
+
+
+def login_window():
+    global windowname
+    windowname = 'login'
+
+    login_frame = ctk.CTkFrame(root, fg_color="#1e1e1e", corner_radius=20)
+    login_frame.pack(padx=20, pady=20, fill="both", expand=True)
+
+    def proceed_login():
+        account = entry_account.get()
+        password = entry_password.get()
+        if not account or not password:
+            messagebox.showerror("错误", "账号或密码不能为空！")
+            return
+        login_frame.destroy()
+        show_main_window(account, password)
+
+    label_account = ctk.CTkLabel(login_frame, text="账号:", font=("Arial", 16), text_color="#FFFFFF")
+    label_account.pack(pady=10)
+    entry_account = ctk.CTkEntry(login_frame, width=300, height=35, font=("Arial", 12), placeholder_text="请输入账号")
+    entry_account.pack(pady=10)
+
+    label_password = ctk.CTkLabel(login_frame, text="密码:", font=("Arial", 16), text_color="#FFFFFF")
+    label_password.pack(pady=10)
+    entry_password = ctk.CTkEntry(login_frame, width=300, height=35, show="*", font=("Arial", 12),
+                                  placeholder_text="请输入密码")
+    entry_password.pack(pady=10)
+
+    login_button = ctk.CTkButton(login_frame, text="确认", command=proceed_login, width=200, height=40,
+                                 corner_radius=10)
+    login_button.pack(pady=20)
+
+
+# 主界面
+def show_main_window(account, password):
+    global windowname
+    main_frame = ctk.CTkFrame(root, fg_color="#1e1e1e", corner_radius=20)
+    main_frame.pack(padx=20, pady=20, fill="both", expand=True)
+
+    def switch_to_task(task_type):
+        global windowname
+        main_frame.destroy()
+        show_task_window(account, password, task_type)
+        windowname = 'task'
+
+    def create_button(parent, text, command=None):
+        return ctk.CTkButton(
+            parent,
+            text=text,
+            command=command,
+            width=150,
+            height=150,
+            corner_radius=0,
+            font=("Arial", 14),
+            fg_color="#2e2e2e",
+            border_color="#1f6aa5",
+            border_width=2,
+            hover_color="#3a3a3a",
+        )
+
+    scrollable_frame = ctk.CTkScrollableFrame(main_frame, fg_color="transparent", width=540, height=260)
+    scrollable_frame.pack(pady=20, padx=10, fill="both", expand=True)
+
+    buttons = [
+
+                  ("服务器链接", lambda: switch_to_task("netchb larry服务器链接（4小时一次）")),
+                  ("query目标单号", lambda: switch_to_task("query目标单号")),
+                  ("netchb上传", lambda: switch_to_task("netchb上传")),
+
+
+
+              ] + [("未解锁功能", None)] * 16  # 增加点按钮以便显示滚动效果
+
+    def create_button(parent, text, command=None):
+        return ctk.CTkButton(
+            parent,
+            text=text,
+            command=command,
+            width=150,
+            height=150,
+            corner_radius=0,
+            font=("Arial", 14),
+            fg_color="#2e2e2e",
+            border_color="#1f6aa5",
+            border_width=2,
+            hover_color="#3a3a3a",
+        )
+
+    for i in range(9):  # 行
+        for j in range(3):  # 列
+            idx = i * 3 + j
+            if idx < len(buttons):
+                btn_text, btn_cmd = buttons[idx]
+                btn = btn = create_button(scrollable_frame, btn_text, btn_cmd)
+                btn.grid(row=i, column=j, padx=10, pady=10)
+
+
+# 任务界面
+def show_task_window(account, password, task_type):
+    task_frame = ctk.CTkFrame(root, fg_color="#1e1e1e", corner_radius=20)
+    task_frame.pack(padx=20, pady=20, fill="both", expand=True)
+
+    output_text = ctk.CTkTextbox(
+        task_frame, width=520, height=120, font=("Consolas", 11),
+        fg_color="#1e1e1e", text_color="#FFFFFF", corner_radius=10,
+        border_width=2, border_color="#007acc"
+    )
+    output_text.pack(pady=10)
+
+    if task_type == "Hold" or task_type == "header修改":
+        mode_var = ctk.StringVar()
+
+        mode_label = ctk.CTkLabel(task_frame, text="请选择操作模式：", text_color="white")
+        mode_label.pack()
+
+        if task_type == "Hold":
+            mode_var.set("仅查找")
+            mode_dropdown = ctk.CTkOptionMenu(
+                task_frame,
+                variable=mode_var,
+                values=["仅查找", "删除"],
+                width=120
+            )
+        elif task_type == "header修改":
+            mode_var.set("61")
+            mode_dropdown = ctk.CTkOptionMenu(
+                task_frame,
+                variable=mode_var,
+                values=["61", "63"],
+                width=120
+            )
+
+
+        mode_dropdown.pack(pady=5)
+    if task_type == "梦想成真模拟器":
+        output_text.destroy()
+        title_frame = ctk.CTkFrame(task_frame, fg_color="transparent")
+        title_frame.pack(pady=30)
+
+        dream_label1 = ctk.CTkLabel(title_frame, text="梦", text_color="#FF69B4",
+                                    font=("Comic Sans MS", 28, "bold"))
+        dream_label1.pack(side="left")
+        dream_label2 = ctk.CTkLabel(title_frame, text="想", text_color="#00BFFF",
+                                    font=("Comic Sans MS", 28, "bold"))
+        dream_label2.pack(side="left")
+        rest_label = ctk.CTkLabel(title_frame, text="成真模拟器", text_color="#FFFFFF",
+                                  font=("Comic Sans MS", 26, "bold"))
+        rest_label.pack(side="left")
+
+        def transform_dreams():
+            progress_win = Toplevel(root)
+            progress_win.title("梦想成真中")
+            progress_win.geometry("400x150")
+            progress_win.configure(bg="white")
+
+            label = tk.Label(progress_win, text="梦想成真中...", font=("Arial", 14), bg="white")
+            label.pack(pady=10)
+
+            progress_bar = ttk.Progressbar(progress_win, length=300, mode='determinate')
+            progress_bar.pack(pady=10)
+            progress_bar["value"] = 0
+
+            def update_bar():
+                for i in range(101):
+                    progress_bar["value"] = i
+                    label.config(text=f"梦想成真中... {i}%")
+                    time.sleep(0.05)
+                    progress_win.update_idletasks()
+
+                label.config(text="🎉 梦想已成真 🎉")
+
+                # ✅ 达到 100% 时立即替换文字
+                def replace_text(widget):
+                    try:
+                        if hasattr(widget, "cget") and callable(widget.cget):
+                            if "text" in widget.keys():
+                                text = widget.cget("text")
+                                if text:
+                                    new_text = text.replace("梦想", "真的").replace("梦", "真").replace("想", "的")
+                                    widget.configure(text=new_text)
+                    except:
+                        pass
+                    for child in widget.winfo_children():
+                        replace_text(child)
+
+                replace_text(task_frame)
+
+                # ✅ 自动 1 秒后关闭进度窗口
+                time.sleep(1)
+                progress_win.destroy()
+
+            threading.Thread(target=update_bar, daemon=True).start()
+
+        dream_button = ctk.CTkButton(
+            task_frame,
+            text="点击把梦想变成真的",
+            command=transform_dreams,
+            width=250,
+            height=60,
+            corner_radius=15,
+            font=("Comic Sans MS", 18, "bold"),
+            fg_color="#FF69B4",
+            hover_color="#FF1493"
+        )
+        dream_button.pack(pady=40)
+
+        back_button = ctk.CTkButton(task_frame, text="返回",
+                                    command=lambda: go_back_to_main(task_frame, account, password),
+                                    width=200, height=40, corner_radius=10)
+        back_button.pack(pady=20)
+
+        return  # 不继续执行下面的通用逻辑
+
+    def start_task():
+        output_text.insert("end", f"启动 {task_type} 任务...\n")
+        if task_type == "Hold" or task_type == "header修改":
+            mode = mode_var.get()
+            threading.Thread(target=start_program, args=(account, password, output_text, task_type, mode),
+                             daemon=True).start()
+        else:
+            threading.Thread(target=start_program, args=(account, password, output_text, task_type),
+                             daemon=True).start()
+
+    start_button = ctk.CTkButton(task_frame, text="开始任务", command=start_task)
+    start_button.pack(pady=10)
+
+    back_button = ctk.CTkButton(task_frame, text="返回", command=lambda: go_back_to_main(task_frame, account, password),
+                                width=200, height=40, corner_radius=10)
+    back_button.pack(pady=20)
+
+
+# 返回主界面并停止任务
+def go_back_to_main(current_frame, account, password):
+    global windowname
+    print("销毁当前窗口...")  # 调试打印
+    current_frame.destroy()
+    stop_event.set()  # 设置停止事件，通知子线程退出
+    show_main_window(account, password)
+    windowname = 'main'
+
+
+# 初始化主窗口
+root = ctk.CTk()
+root.title("NXU")
+root.geometry("600x420")
+root.configure(fg_color="#1e1e1e")
+
+# 显示登录窗口
+login_window()
+
+# 启动 GUI 主循环
+root.mainloop()
