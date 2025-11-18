@@ -828,6 +828,7 @@ def netchb_query(account, password, output_text):
     try:
         df = pd.read_excel(file_path, engine='openpyxl')
         entry_nos = df.iloc[:, 0].astype(str).str.strip().tolist()
+        entry_nos = [re.search(r'\d+', x).group() if '-' in x else x for x in entry_nos]
         update_output_text(output_text,f"成功读取 {len(entry_nos)} 个单号。")
     except Exception as e:
         update_output_text(output_text,f"读取 Excel 文件时发生错误: {e}")
@@ -1188,6 +1189,7 @@ def netchb_entry_update(account, password, output_text):
 
     # 提取第一列（entry_nos）
     entry_nos = df_filtered.iloc[:, 0].astype(str).str.strip().tolist()
+    entry_nos = [re.search(r'\d+', x).group() if '-' in x else x for x in entry_nos]
     # 提取第十列（manufacture_list），注意这里都是 'Y'
     manufacture_list = df_filtered.iloc[:, 11].astype(str).str.strip().tolist()
     # 2. 处理每个单号（在单号前加 2）
@@ -1209,7 +1211,7 @@ def netchb_entry_update(account, password, output_text):
         select_element = driver.find_element(By.ID, "cfrm1")
         select = Select(select_element)
         select.select_by_value("consignee")
-        time.sleep(20)
+        time.sleep(2)
         save_button = driver.find_element(By.XPATH,
                                           '//*[@id="entF"]/div[11]/input[1]')
         save_button.click()
@@ -1217,7 +1219,9 @@ def netchb_entry_update(account, password, output_text):
         driver.get(f'https://www.netchb.com/app/entry/transmit/finalizeEntry.do?filerCode=NXU&entryNo={prefixed_no}')
         transmit_button = driver.find_element(By.XPATH,
                                               '//*[@id="t0"]/input[1]')
-        transmit_button.click()
+
+
+        # transmit_button.click()
 
 
 
@@ -1243,12 +1247,12 @@ def netchb_entry_update(account, password, output_text):
                     time.sleep(1)
                 else:
                     update_output_text(output_text, f"{entry_no} 第2次也失败，标记为失败")
-                    df.loc[idx, df.columns[13]] = "netchb 没能成功选取"  # 第14列（N列）标记失败
+                    df.loc[idx, df.columns[13]] = "清关失败"  # 第14列（N列）标记失败
                     success = False
 
         # 如果两次都失败，也要保证有标记（上面的 else 已经写了，这里再保一次）
         if not success:
-            df.loc[idx, df.columns[13]] = "工厂信息没能成功选取，没有点击transmit"
+            df.loc[idx, df.columns[13]] = "清关失败"
 
         # ------------------- 前面 Selenium 部分结束，等 2 秒再去查状态 -------------------
         driver.get('https://www.netchb.com/app/entry/index.jsp')
@@ -1268,7 +1272,6 @@ def netchb_entry_update(account, password, output_text):
             df.loc[idx, '3461_status'] = "查询失败"
 
     # ------------------- 全部处理完毕，一次性保存 Excel -------------------
-    update_output_text(output_text, df)
     df.to_excel(file_path, index=False, engine='openpyxl')
     update_output_text(output_text, "处理完毕！\n")
 
