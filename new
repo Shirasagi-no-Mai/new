@@ -1221,7 +1221,7 @@ def netchb_entry_update(account, password, output_text):
                                               '//*[@id="t0"]/input[1]')
 
 
-        # transmit_button.click()
+        transmit_button.click()
 
 
 
