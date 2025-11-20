@@ -1091,6 +1091,10 @@ def netchb_entry_update(account, password, output_text):
             return {}
 
     def get_mawb_info(entry_no, cookies, result_dict):
+        """
+        根据 Entry No 抓取 7501 和 3461 的状态。
+        采用基于位置的稳定抓取策略。
+        """
         session = requests.Session()
 
         # 强制设置 cookie（两个域名都设一遍，保险）
@@ -1111,10 +1115,17 @@ def netchb_entry_update(account, password, output_text):
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
         }
 
+        # 注意：Entry No 搜索时可能需要 Entry No 全称 (e.g., NXU-9996397-5)
+        # 假设 entry_no 已经是完整的 Entry No 字符串
         payload = {
             "entryNoSearch": str(entry_no),
-            "searchTimePeriod": "Y1", "user": "NXUAUTO", "location": "4755",
-            "noPerPage": "50", "orderBy": "vep1", "page": "0", "method": "view"
+            "searchTimePeriod": "Y1",
+            "user": "NXUAUTO",
+            "location": "4755",  # 假设这是一个通用或默认值
+            "noPerPage": "50",
+            "orderBy": "vep1",
+            "page": "0",
+            "method": "view"
         }
 
         try:
@@ -1124,45 +1135,79 @@ def netchb_entry_update(account, password, output_text):
             )
         except Exception as e:
             result_dict[entry_no] = {"7501": "NET_ERR", "3461": "NET_ERR"}
+            print(f"[{entry_no}] 网络请求失败: {e}")
             return
 
         if resp.status_code != 200 or "login" in resp.text.lower():
             result_dict[entry_no] = {"7501": "LOGIN", "3461": "LOGIN"}
+            print(f"[{entry_no}] 登录状态异常或返回码非 200")
             return
 
-        # ====================== 终极核弹：正则 + BeautifulSoup 双管齐下 ======================
+        # ====================== 1. 正则直接暴力抠（最稳且最快） ======================
         text = resp.text
+        # 打印返回的 HTML 供调试
+        # print(text)
 
-        # 方法1：正则直接暴力抠（最稳）
-        pattern = rf'value=["\']{entry_no}["\'][^>]*>.*?<td class="status allClear">([^<]+)</td>.*?<td class="status allClear">([^<]+)</td>'
+        # 📌 正则策略：定位 Entry No 链接，跳过后续 7 个 <td>，然后捕获接下来的 2 个 <td>
+        # 1. 匹配 Entry No 的 <a> 链接
+        # 2. 匹配并跳过 Entry No <td> 的结束标签 </td>
+        # 3. 匹配并跳过接下来的 7 个 <td>/</td> 对 (Importer 到 ETA)
+        # 4. 捕获第 9 个 <td> 的内容 (7501 Status)
+        # 5. 捕获第 10 个 <td> 的内容 (3461 Status)
+
+        # 因为 Entry No (e.g., NXU-9996397-5) 包含连字符，这里简化为只匹配数字部分
+        # 假设 entryNo 是完整的 Entry No 字符串
+        entry_link_part = re.escape(str(entry_no))
+
+        # 使用 (\s*<td[^>]*>.*?</td>){7} 来跳过 7 个字段，并使用非贪婪匹配 .*?
+        pattern = rf'<a href="/app/entry/viewEntry\.do\?filerCode=.*?&amp;entryNo={entry_link_part}">.*?</a>\s*</td>'  # 匹配到 Entry No <td> 结束
+        pattern += r'(\s*<td[^>]*>.*?</td>){7}'  # 跳过 Importer 到 ETA 的 7 个 <td>
+        pattern += r'\s*<td[^>]*>([^<]+)</td>'  # 捕获第 9 个 <td> (7501 Status)
+        pattern += r'\s*<td[^>]*>([^<]+)</td>'  # 捕获第 10 个 <td> (3461 Status)
+
         match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
 
         if match:
-            status_7501 = match.group(1).strip()
-            status_3461 = match.group(2).strip()
+            # group(1) 是跳过的 7 个 <td> 的最后一个，我们不需要。
+            # group(2) 是 7501 状态
+            # group(3) 是 3461 状态
+            status_7501 = match.group(2).strip()
+            status_3461 = match.group(3).strip()
             result_dict[entry_no] = {"7501": status_7501, "3461": status_3461}
-            print(f"{entry_no} → 成功（正则） → 7501: {status_7501} | 3461: {status_3461}")
+            print(f"[{entry_no}] → 成功（正则-位置） → 7501: {status_7501} | 3461: {status_3461}")
             return
 
-        # 方法2：如果正则没抓到，用 BS4 再试一次
-        soup = BeautifulSoup(text, "html.parser")  # 改回最稳定的 html.parser
-        input_tag = soup.find("input", {"value": str(entry_no)})
-        if input_tag:
-            tr = input_tag.find_parent("tr")
+        # ====================== 2. BS4 备用方案（基于位置） ======================
+        soup = BeautifulSoup(text, "html.parser")
+
+        # 📌 BS4 策略：找到 Entry No 链接，找到父级行，然后按索引取第 8 和 9 个 <td> (从 0 开始)
+        # 根据您提供的 HTML，Entry No 在 <a> 标签中，通过 href 属性定位。
+        a_tag = soup.find("a", href=lambda href: href and str(entry_link_part) in href)
+
+        if a_tag:
+            tr = a_tag.find_parent("tr")
             if tr:
-                cells = tr.find_all("td", class_="status allClear")
-                if len(cells) >= 2:
+                # 找到<tr>下的所有<td>标签
+                all_tds = tr.find_all("td")
+
+                # Entry No 是第 1 列 (索引 0)，7501 Status 是第 9 列 (索引 8)，3461 Status 是第 10 列 (索引 9)
+
+                if len(all_tds) >= 10:  # 确保至少有 10 个 td
+                    # 索引 8: 7501 Status
+                    status_7501 = all_tds[8].get_text(strip=True)
+                    # 索引 9: 3461 Status
+                    status_3461 = all_tds[9].get_text(strip=True)
+
                     result_dict[entry_no] = {
-                        "7501": cells[0].get_text(strip=True),
-                        "3461": cells[1].get_text(strip=True)
+                        "7501": status_7501,
+                        "3461": status_3461
                     }
-                    print(f"{entry_no} → 成功（BS4） → 7501: {cells[0].text.strip()} | 3461: {cells[1].text.strip()}")
+                    print(f"[{entry_no}] → 成功（BS4-位置） → 7501: {status_7501} | 3461: {status_3461}")
                     return
 
-        # 如果两个方法都失败，直接把整段 HTML 打印出来让你看
-        print(f"\n【{entry_no} 抓取失败】以下是原始页面片段（请你自己找 status allClear 在哪）：")
-        print(text[text.find(str(entry_no)) - 200: text.find(str(entry_no)) + 800])
+        # ====================== 3. 失败处理 ======================
         result_dict[entry_no] = {"7501": "未提取到", "3461": "未提取到"}
+        print(f"\n【{entry_no} 抓取失败】请检查 Entry No 是否正确或页面结构是否改变。")
 
 
     def wait_and_click(driver, xpath, timeout=3, interval=0.5):
@@ -1542,7 +1587,7 @@ def go_back_to_main(current_frame, account, password):
 
 # 初始化主窗口
 root = ctk.CTk()
-root.title("NXU")
+root.title("真是一对苦命鸳鸯")
 root.geometry("600x420")
 root.configure(fg_color="#1e1e1e")
 
