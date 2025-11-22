@@ -823,6 +823,114 @@ def netchb_query(account, password, output_text):
             update_output_text(output_text,f"异常25 {e}\n")
             return "error"
 
+    QTY_EXTRACTION_ERROR = "数量异常"  # 用于表示提取失败的标记
+
+    def get_manifest_quantities(entry_no):
+        """
+        新增函数：执行两次请求，获取额外的货物数量信息。
+        返回: (qty_html: int|None, qty_xml_list: list)
+        """
+        cookies_dict = read_cookies_from_txt()
+        if not cookies_dict:
+            return None, None  # 无法读取 Cookies，返回 None
+
+        session = requests.Session()
+        for name, value in cookies_dict.items():
+            session.cookies.set(name, value, domain="www.netchb.com", path="/")
+
+        # --- 请求 1: 获取 Manifest 页面 (HTML) ---
+        url1 = f"https://www.netchb.com/app/entry/editManifest.do?filerCode=NXU&entryNo={entry_no}"
+        payload1 = {"filerCode": "NXU", "entryNo": entry_no}
+        headers1 = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "Accept-Encoding": "gzip, deflate, br, zstd",
+            "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Connection": "keep-alive",
+            "Host": "www.netchb.com",
+            "Referer": f"https://www.netchb.com/app/entry/viewEntry.do?filerCode=NXU&entryNo={entry_no}",
+            "Sec-Ch-Ua": '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+            "Content-Type": "application/x-www-form-urlencoded"  # 注意：虽然是GET但为了安全，保留POST/Form-urlencoded
+        }
+
+        qty_html = None
+        try:
+            resp1 = session.post(url=url1, data=payload1, headers=headers1, timeout=30, verify=False)
+            if resp1.status_code == 200:
+                soup1 = BeautifulSoup(resp1.text, 'html.parser')
+                # 定位 <input type="text" name="manifestRecords[0].quantityTemp" ... value="372">
+                qty_input = soup1.find("input", {"name": "manifestRecords[0].quantityTemp"})
+
+                if qty_input and qty_input.get("value"):
+                    try:
+                        qty_html = int(qty_input["value"])
+                    except ValueError:
+                        update_output_text(output_text, f"[{entry_no}] 数量1提取到非数字值: {qty_input['value']}\n")
+                        qty_html = QTY_EXTRACTION_ERROR
+                else:
+                    update_output_text(output_text, f"[{entry_no}] 数量1 HTML元素未找到或无value。\n")
+                    qty_html = QTY_EXTRACTION_ERROR
+            else:
+                update_output_text(output_text, f"[{entry_no}] 数量1请求失败，状态码: {resp1.status_code}\n")
+                qty_html = QTY_EXTRACTION_ERROR
+
+        except Exception as e:
+            update_output_text(output_text, f"[{entry_no}] 数量1请求异常: {e}\n")
+            qty_html = QTY_EXTRACTION_ERROR
+
+        # --- 请求 2: 获取 Cargo Manifest Query Results (XML) ---
+        url2 = "https://www.netchb.com/app/entry/cargoManifestQueryResults.do"
+        headers2 = {
+            "Accept": "*/*",
+            "Accept-Encoding": "gzip, deflate, br, zstd",
+            "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Connection": "keep-alive",
+            "Host": "www.netchb.com",
+            "Referer": f"https://www.netchb.com/app/entry/editManifest.do?filerCode=NXU&entryNo={entry_no}",
+            "Sec-Ch-Ua": '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+            "X-Requested-With": "XMLHttpRequest"
+        }
+
+        qty_xml_list = []
+        try:
+            resp2 = session.get(url=url2, headers=headers2, timeout=30, verify=False)
+            if resp2.status_code == 200:
+                # 尝试解析 XML
+                soup2 = BeautifulSoup(resp2.text, 'xml')  # 使用 'xml' 解析器
+                qty_tags = soup2.find_all('qty')
+
+                for tag in qty_tags:
+                    try:
+                        qty_xml_list.append(int(tag.text.strip()))
+                    except ValueError:
+                        update_output_text(output_text, f"[{entry_no}] 数量2 XML提取到非数字值: {tag.text.strip()}\n")
+                        qty_xml_list.append(QTY_EXTRACTION_ERROR)
+
+            else:
+                update_output_text(output_text, f"[{entry_no}] 数量2请求失败，状态码: {resp2.status_code}\n")
+                # 失败则使用错误标记
+                qty_xml_list = [QTY_EXTRACTION_ERROR]
+
+        except Exception as e:
+            update_output_text(output_text, f"[{entry_no}] 数量2请求异常: {e}\n")
+            # 异常则使用错误标记
+            qty_xml_list = [QTY_EXTRACTION_ERROR]
+
+        return qty_html, qty_xml_list
+
     # ==============================================================================
     # 主执行逻辑 (MAIN EXECUTION LOGIC)
     # ==============================================================================
@@ -832,9 +940,9 @@ def netchb_query(account, password, output_text):
         df = pd.read_excel(file_path, engine='openpyxl')
         entry_nos = df.iloc[:, 0].astype(str).str.strip().tolist()
         entry_nos = [re.search(r'\d+', x).group() if '-' in x else x for x in entry_nos]
-        update_output_text(output_text,f"成功读取 {len(entry_nos)} 个单号。\n")
+        update_output_text(output_text, f"成功读取 {len(entry_nos)} 个单号。\n")
     except Exception as e:
-        update_output_text(output_text,f"读取 Excel 文件时发生错误: {e}\n")
+        update_output_text(output_text, f"读取 Excel 文件时发生错误: {e}\n")
         entry_nos = []
 
     # 初始化列表
@@ -843,8 +951,14 @@ def netchb_query(account, password, output_text):
     TIMEOUT_SECONDS = 10 * 60  # 10 分钟超时
     RETRY_DELAY_SECONDS = 10  # 10 秒重试间隔
 
-    # --- PHASE 1: QUERY SUBMISSION (批量提交查询，不等待结果) ---
+    # 新增列的初始化错误值
+    QTY_COLUMNS = ["Qty_HTML", "Qty_XML_Count", "Qty_XML_Values_Match"]
+    QTY_ERROR_INIT = ["N/A"] * 3
+    # 更新错误填充列表
+    COLUMNS_INIT_ERROR = ["error_msg"] * 8 + ["error_msg"] + ["error_msg"] + ["error_msg"] + [
+        "query 失败"] + QTY_ERROR_INIT
 
+    # --- PHASE 1: QUERY SUBMISSION (批量提交查询，不等待结果) ---
 
     for entry_no in entry_nos:
         prefixed_no = f"2{entry_no}"
@@ -864,24 +978,20 @@ def netchb_query(account, password, output_text):
             pending_queries.append({'entry_no': entry_no, 'prefixed_no': prefixed_no, 'query_id': query_id})
 
         except Exception as e:
-            update_output_text(output_text,f"[{prefixed_no}] 异常27 {e}\n")
+            update_output_text(output_text, f"[{prefixed_no}] 异常27 {e}\n")
             error_msg = f"查询准备失败: {e}"
             # 记录查询准备失败，使用错误信息填充所有结果列
-            # 字段顺序: entry_no + counts(8) + manifested_port + actual_port + manufacturer + status
-            results.append([entry_no] + [error_msg] * 8 + [error_msg] + [error_msg] + [error_msg] + ["query 失败"])
+            results.append([entry_no] + [error_msg] * 8 + [error_msg] + [error_msg] + [error_msg] + [
+                "query 失败"] + QTY_ERROR_INIT)
 
     # --- PHASE 2: RESULT RETRIEVAL (逐个查询结果，带重试/超时) ---
-
 
     for item in pending_queries:
         entry_no = item['entry_no']
         prefixed_no = item['prefixed_no']
         query_id = item['query_id']
-
-
-
-        # 循环重试 view_query_result (Retry loop for view_query_result)
         start_time = time.time()
+
         # 初始化所有结果组件为超时/错误状态
         counts = [ERROR_TIMEOUT_MSG] * 8
         manifested_port = ERROR_TIMEOUT_MSG
@@ -889,18 +999,21 @@ def netchb_query(account, password, output_text):
         manu = ERROR_TIMEOUT_MSG
         is_document_required = False
         query_success = False
+        # 新增的初始化
+        qty_html = QTY_EXTRACTION_ERROR
+        qty_xml_list = [QTY_EXTRACTION_ERROR]
 
         while time.time() - start_time < TIMEOUT_SECONDS:
             time_elapsed = int(time.time() - start_time)
-            update_output_text(output_text,f"[{prefixed_no}] 尝试获取查询结果 (已耗时: {time_elapsed}s / {TIMEOUT_SECONDS}s)\n")
+            update_output_text(output_text,
+                               f"[{prefixed_no}] 尝试获取查询结果 (已耗时: {time_elapsed}s / {TIMEOUT_SECONDS}s)\n")
 
             # 2a. 获取 counts, ports, doc_required 和原始响应文本
             current_counts, m_port, a_port, doc_required, response_text = view_query_result(prefixed_no, query_id)
 
             # 2b. 检查是否成功
-            # 成功条件：counts 中不含 "error" 且 响应文本中不含 "Not Received"
             if "error" not in current_counts and not is_result_not_received(response_text):
-                update_output_text(output_text,f"[{prefixed_no}] 查询结果成功获取。\n")
+                update_output_text(output_text, f"[{prefixed_no}] 查询结果成功获取。\n")
 
                 # 2c. 存储成功获取的数据并尝试获取 manufacturer
                 counts = current_counts
@@ -908,7 +1021,7 @@ def netchb_query(account, password, output_text):
                 actual_port = a_port
                 is_document_required = doc_required
 
-                # --- 获取 Manufacturer (移到结果获取成功后) ---
+                # --- 获取 Manufacturer (保持不变) ---
                 invoice_id = get_invoice_id_from_entry(prefixed_no)
                 temp_manu = get_manufacturer_from_invoice(prefixed_no, invoice_id)
 
@@ -920,63 +1033,114 @@ def netchb_query(account, password, output_text):
                     manu = temp_manu
                 # ---------------------------------------------
 
+                # --- 获取新增的 Qty 信息 ---
+                qty_html, qty_xml_list = get_manifest_quantities(prefixed_no)
+                # ---------------------------------------------
+
                 query_success = True
                 break
             elif "error" in current_counts:
-                update_output_text(output_text,f"[{prefixed_no}] 请求出错，等待重试...\n")
+                update_output_text(output_text, f"[{prefixed_no}] 请求出错，等待重试...\n")
             elif is_result_not_received(response_text):
-                update_output_text(output_text,f"[{prefixed_no}] 结果未就绪，等待 {RETRY_DELAY_SECONDS} 秒后重试...\n")
+                update_output_text(output_text, f"[{prefixed_no}] 结果未就绪，等待 {RETRY_DELAY_SECONDS} 秒后重试...\n")
             else:
-                update_output_text(output_text,f"[{prefixed_no}] 未知失败，等待 {RETRY_DELAY_SECONDS} 秒后重试...\n")
+                update_output_text(output_text, f"[{prefixed_no}] 未知失败，等待 {RETRY_DELAY_SECONDS} 秒后重试...\n")
 
             # 2d. 等待重试
             time.sleep(RETRY_DELAY_SECONDS)
 
-        # 3. 计算最终状态 (Calculate final status)
-        if not query_success:
-            update_output_text(output_text,f"[{prefixed_no}] 达到 {TIMEOUT_SECONDS} 秒超时，未能获取最终结果。\n")
-            final_status = "query 失败"
-        else:
-            # 检查港口信息提取是否失败（满足用户新增要求）
-            if manifested_port == PORT_MISSING_ERROR:
-                final_status = "query 失败"
-                update_output_text(output_text,f"[{prefixed_no}] 港口信息提取失败（Manifested Port 或 Actual Port 缺失），状态设置为 'query 失败'。\n")
-                # 确保 port 列的数据被记录为 '提取失败'
-                if manifested_port == PORT_MISSING_ERROR: manifested_port = "提取失败"
-                if actual_port == PORT_MISSING_ERROR: actual_port = "提取失败"
+        # --- Qty 信息处理 (新增逻辑) ---
 
-            # 4. 根据成功获取的数据计算最终状态，排除 1Y 的其他数量 (0-6 索引)
-            elif manifested_port != actual_port and actual_port != PORT_MISSING_ERROR:
-                final_status = "port 不同"
-            # 检查 1H, 2H, 5H, 9H, 3H, 1A, 4A 中是否有非零数量，或是否有 DOCUMENT REQUIRED 关键词
-            else:
-                # 检查是否为 int 类型，避免 'error' 参与比较
-                check_counts = [c for c in counts[:7] if isinstance(c, int) and c >= 0]
-                if any(c > 0 for c in check_counts) or is_document_required:
-                    final_status = "有扣货"
+        # 数量1：Qty_HTML（int 或 QTY_EXTRACTION_ERROR）
+        # 数量2：qty_xml_list（list of int 或 QTY_EXTRACTION_ERROR）
+
+        # 默认值
+        qty_html_out = str(qty_html)
+        qty_xml_count_out = len(qty_xml_list) if qty_xml_list and qty_xml_list != [QTY_EXTRACTION_ERROR] else "0或提取失败"
+        qty_xml_match_out = "N/A"  # 默认无需检查
+
+        # 检查是否成功获取了数量信息
+        is_qty_valid = (qty_html != QTY_EXTRACTION_ERROR) and (qty_xml_list and qty_xml_list != [QTY_EXTRACTION_ERROR])
+
+        if is_qty_valid:
+            # 检查 XML QTY 数量
+            xml_qty_count = len(qty_xml_list)
+
+            if xml_qty_count > 2:
+                # 数量超过 2 个，直接返回 COD LCL 状态
+                final_status = "COD LCL"
+                qty_xml_match_out = "XML数量 > 2"
+
+            elif xml_qty_count >= 1:
+                # 数量为 1 或 2 个，检查数量是否都与 Qty_HTML 相同
+                all_match = all(isinstance(q, int) and q == qty_html for q in qty_xml_list)
+
+                if not all_match:
+                    # 数量不匹配或 XML 中有非数字值
+                    final_status = QTY_EXTRACTION_ERROR
+                    qty_xml_match_out = "数量不匹配"
+
                 else:
-                    final_status = "Y"
+                    qty_xml_match_out = "数量一致"
+
+                    # 3. 计算最终状态 (原始逻辑) - 只有在数量检查通过时才执行
+                    if not query_success:
+                        final_status = "query 失败"
+                        update_output_text(output_text,
+                                           f"[{prefixed_no}] 达到 {TIMEOUT_SECONDS} 秒超时，未能获取最终结果。\n")
+
+                    elif manifested_port == PORT_MISSING_ERROR:
+                        final_status = "query 失败"
+                        update_output_text(output_text,
+                                           f"[{prefixed_no}] 港口信息提取失败（Manifested Port 或 Actual Port 缺失），状态设置为 'query 失败'。\n")
+                        # 确保 port 列的数据被记录为 '提取失败'
+                        if manifested_port == PORT_MISSING_ERROR: manifested_port = "提取失败"
+                        if actual_port == PORT_MISSING_ERROR: actual_port = "提取失败"
+
+                    elif manifested_port != actual_port and actual_port != PORT_MISSING_ERROR:
+                        final_status = "port 不同"
+
+                    else:
+                        # 检查 1H, 2H, 5H, 9H, 3H, 1A, 4A 中是否有非零数量，或是否有 DOCUMENT REQUIRED 关键词
+                        # 检查是否为 int 类型，避免 'error' 参与比较
+                        check_counts = [c for c in counts[:7] if isinstance(c, int) and c >= 0]
+                        if any(c > 0 for c in check_counts) or is_document_required:
+                            final_status = "有扣货"
+                        else:
+                            final_status = "Y"
+
+            else:  # xml_qty_count == 0
+                final_status = QTY_EXTRACTION_ERROR
+                qty_xml_match_out = "XML数量为 0"
+
+        else:
+            # 数量获取失败 (qty_html 或 xml_list 失败)
+            final_status = QTY_EXTRACTION_ERROR
+            qty_xml_match_out = "数量提取失败"
 
         # 5. 记录最终结果
-        # 结果行：entry_no + counts (8) + manifested_port (1) + actual_port (1) + manu (1) + final_status (1)
-        result_row = [entry_no] + counts + [manifested_port] + [actual_port] + [manu] + [final_status]
+        # 结果行：entry_no + counts (8) + manifested_port (1) + actual_port (1) + manu (1) + final_status (1) + Qty_HTML + Qty_XML_Count + Qty_XML_Values_Match
+        result_row = [entry_no] + counts + [manifested_port] + [actual_port] + [manu] + [final_status] + [qty_html_out,
+                                                                                                          str(qty_xml_count_out),
+                                                                                                          qty_xml_match_out]
         results.append(result_row)
 
     # 3. 写 Excel (Write to Excel)
     # 新的列顺序和名称：
     COLUMNS = [
         "entry_no", "1H", "2H", "5H", "9H", "3H", "1A", "4A", "1Y",
-        "Manifested Port", "Actual Port", "manufacturer", "status"
+        "Manifested Port", "Actual Port", "manufacturer", "status",
+        "Qty_HTML", "Qty_XML_Count", "Qty_XML_Values_Match"
     ]
     df_result = pd.DataFrame(results, columns=COLUMNS)
 
     # 写入 Excel
     try:
         df_result.to_excel(file_path, index=False)
-        update_output_text(output_text,f"\n处理完成！结果已保存：{file_path}\n")
+        update_output_text(output_text, f"\n处理完成！结果已保存：{file_path}\n")
     except Exception as e:
-        update_output_text(output_text,f"\n写入 Excel 文件失败: {e}\n")
-    update_output_text(output_text,"程序完成")
+        update_output_text(output_text, f"\n写入 Excel 文件失败: {e}\n")
+    update_output_text(output_text, "程序完成")
 def netchb_entry_update(account, password, output_text):
     update_output_text(output_text, "请事先检查好数据正确再开始代码\n请不要在运行时手动打开任何netchb页面\n因为netchb本身bug会导致信息混乱")
     user_home = os.path.expanduser("~")
@@ -1609,9 +1773,9 @@ def go_back_to_main(current_frame, account, password):
     windowname = 'main'
 
 
-# 初始化主窗口
+# 初始化主窗
 root = ctk.CTk()
-root.title("NXU AUTO")
+root.title("真是一对苦命鸳鸯")
 root.geometry("600x420")
 root.configure(fg_color="#1e1e1e")
 
