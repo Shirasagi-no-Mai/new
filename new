@@ -143,7 +143,7 @@ def netchb_token(account, password, output_text):
 
 
     if desktop_path:
-        txt_file_path = os.path.join(desktop_path, "yuejie.txt")
+        txt_file_path = os.path.join(desktop_path, "nxu.txt")
         if os.path.exists(txt_file_path):
             update_output_text(output_text, "已找到output.txt，正在运行\n")
             pass
@@ -153,7 +153,7 @@ def netchb_token(account, password, output_text):
                 pass
             sys.exit()  # 程序立即停止
     else:
-        update_output_text(output_text,"创建excel失败")
+        update_output_text(output_text,"创建excel失败\n")
         sys.exit()  # 程序立即停止
 
     chrome_options = webdriver.ChromeOptions()
@@ -163,7 +163,7 @@ def netchb_token(account, password, output_text):
     chrome_options.add_argument("--disable-dev-shm-usage")  # 避免某些共享内存问题
     chrome_options.add_argument("--always-on-top")  # 窗口置顶 (实验性参数)
     chrome_options.add_argument("--force-device-scale-factor=0.5")  # 设置缩放比例为50%
-
+    chrome_options.add_argument("--headless")
     # 启动 Chrome 浏览器并加载已保存的用户数据
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
     driver.set_window_size(1920, 1080)
@@ -259,12 +259,12 @@ def netchb_token(account, password, output_text):
             return requests_cookies  # 返回结构化字典
 
         except Exception as e:
-            print(f"[Error] 获取 cookies 失败: {e}")
+            update_output_text(output_text,f"[Error] 错误001: {e}\n")
             traceback.print_exc()
             return {}
 
     if desktop_path:
-        txt_file_path = os.path.join(desktop_path, "yuejie.txt")
+        txt_file_path = os.path.join(desktop_path, "nxu.txt")
         if not os.path.exists(txt_file_path):
             update_output_text(output_text,"未找到output.txt\n")
             pass
@@ -272,13 +272,15 @@ def netchb_token(account, password, output_text):
             cookies_dict = get_cookies_from_driver(driver)
             with open(txt_file_path, 'w', encoding='utf-8') as txt_file:
                 txt_file.write(json.dumps({"cookies": cookies_dict}, ensure_ascii=False))
+            update_output_text(output_text, "身份信息获取完成\n")
+
             driver.quit()
             sys.exit()  # 程序立即停止
     else:
+
         driver.quit()
         sys.exit()  # 程序立即停止
-    update_output_text(output_text, "身份信息获取完成")
-    driver.quit()
+
 def netchb_query(account, password, output_text):
     expiration_date = expiration_date1
     now = datetime.now()
@@ -301,7 +303,7 @@ def netchb_query(account, password, output_text):
     desktop_path = next((path for path in possible_paths if os.path.exists(path)), None)
 
     if desktop_path:
-        file_path = os.path.join(desktop_path, "yuejie.xlsx")
+        file_path = os.path.join(desktop_path, "nxu.xlsx")
         if os.path.exists(file_path):
             update_output_text(output_text,"已找到用于输出的excel文件即将继续代码\n\n")
             # 继续后续代码...
@@ -316,7 +318,7 @@ def netchb_query(account, password, output_text):
             sys.exit()  # 程序停止，等待用户填数据
 
     def read_cookies_from_txt():
-        txt_file_path = os.path.join(desktop_path, "yuejie.txt")
+        txt_file_path = os.path.join(desktop_path, "nxu.txt")
 
         if not os.path.exists(txt_file_path):
             update_output_text(output_text,"output.txt 文件不存在！\n")
@@ -328,7 +330,7 @@ def netchb_query(account, password, output_text):
 
             raw_cookies = data.get("cookies", {})
             if not isinstance(raw_cookies, dict):
-                update_output_text(output_text,"异常1")
+                update_output_text(output_text,"异常1\n")
                 return {}
 
             cookies_dict = {}
@@ -341,10 +343,10 @@ def netchb_query(account, password, output_text):
             return cookies_dict
 
         except json.JSONDecodeError as je:
-            update_output_text(output_text,f"网页解析失败！错误: {je}")
+            update_output_text(output_text,f"网页解析失败！错误: {je}\n")
             return {}
         except Exception as e:
-            update_output_text(output_text,f"读取文本文件出错: {type(e).__name__}: {e}")
+            update_output_text(output_text,f"读取文本文件出错: {type(e).__name__}: {e}\n")
             return {}
 
     def get_mawb_info(entry_no, cookies):
@@ -400,7 +402,7 @@ def netchb_query(account, password, output_text):
             ]}
 
         if resp.status_code != 200 or "login" in resp.text.lower():
-            update_output_text(output_text,"异常3")
+            update_output_text(output_text,"异常3\n")
             return {k: "N/A" for k in [
                 "entryActionCode", "viaAce", "cargoReleaseViaAce",
                 "cargoReleaseActionCode", "arrivalDate", "inBondType", "saBtaAction"
@@ -478,7 +480,7 @@ def netchb_query(account, password, output_text):
     def creat_entry_query(entry_no, mawb_info):
         result = mawb_info
         if "error" in result:
-            update_output_text(output_text,f"异常4: {result['error']}，停止构建")
+            update_output_text(output_text,f"异常4: {result['error']}，停止构建\n")
             return None
         payload = {
             "entryActionCode": result.get("entryActionCode", ""),
@@ -505,12 +507,12 @@ def netchb_query(account, password, output_text):
     def transmit_entry_request(entry_no, payload_information_query):
         cookies_dict = read_cookies_from_txt()
         if not cookies_dict:
-            update_output_text(output_text,"异常5")
+            update_output_text(output_text,"异常5\n")
             return None
 
         payload_str = payload_information_query
         if payload_str is None:  # 失败返回 None
-            update_output_text(output_text,"异常6")
+            update_output_text(output_text,"异常6\n")
             return None
         session = requests.Session()
         for name, value in cookies_dict.items():
@@ -545,19 +547,19 @@ def netchb_query(account, password, output_text):
             return session, response
 
         except Exception as e:
-            update_output_text(output_text,f"异常10: {e}")
+            update_output_text(output_text,f"异常10: {e}\n")
             return None, None
 
     def get_query_number(entry_no, query_result):
 
         cookies_dict = read_cookies_from_txt()
         if not cookies_dict:
-            update_output_text(output_text,"异常11")
+            update_output_text(output_text,"异常11\n")
             return None
 
         result = query_result
         if not result:
-            update_output_text(output_text,"异常12")
+            update_output_text(output_text,"异常12\n")
             return None
         session, transmit_resp = result  # 解包
 
@@ -604,13 +606,14 @@ def netchb_query(account, password, output_text):
 
             if st_msg_td:
                 msg_id = st_msg_td["id"].replace("stMsg", "")
+                update_output_text(output_text, f"{entry_no}已成功创建query \n")
                 return msg_id
             else:
-                update_output_text(output_text,"异常13")
+                update_output_text(output_text,"异常13\n")
                 return None
 
         except Exception as e:
-            update_output_text(output_text,f"异常14: {e}")
+            update_output_text(output_text,f"异常14: {e}\n")
             return None
 
     def is_result_not_received(response_text):
@@ -633,13 +636,13 @@ def netchb_query(account, password, output_text):
         # 1. cookies
         cookies_dict = read_cookies_from_txt()
         if not cookies_dict:
-            update_output_text(output_text,"异常15")
+            update_output_text(output_text,"异常15\n")
             return ["error"] * 8, PORT_MISSING_ERROR, PORT_MISSING_ERROR, False, ""
 
         # 2. transmission_id
         transmission_id = query_id
         if not transmission_id or isinstance(transmission_id, dict):
-            update_output_text(output_text,"异常16")
+            update_output_text(output_text,"异常16\n")
             return ["error"] * 8, PORT_MISSING_ERROR, PORT_MISSING_ERROR, False, ""
 
         # 3. 请求
@@ -672,7 +675,7 @@ def netchb_query(account, password, output_text):
             text = response.text
 
             if response.status_code != 200:
-                update_output_text(output_text,f"异常17: {response.status_code}")
+                update_output_text(output_text,f"异常17: {response.status_code}\n")
                 return ["error"] * 8, PORT_MISSING_ERROR, PORT_MISSING_ERROR, False, text
 
             # 1. 统计代码数量 (Count codes)
@@ -695,7 +698,7 @@ def netchb_query(account, password, output_text):
             return counts, manifested_port, actual_port, is_document_required, text
 
         except Exception as e:
-            update_output_text(output_text,f"异常18: {e}")
+            update_output_text(output_text,f"异常18: {e}\n")
             # 返回 8 个 error 标志和 Port Not Found 港口
             return ["error"] * 8, PORT_MISSING_ERROR, PORT_MISSING_ERROR, False, ""
 
@@ -754,18 +757,18 @@ def netchb_query(account, password, output_text):
             return None
 
         except Exception as e:
-            update_output_text(output_text,f"异常19: {e}")
+            update_output_text(output_text,f"异常19: {e}\n")
             return None
 
     def get_manufacturer_from_invoice(entry_no, invoice_id):
         """获取制造商信息。函数体保持不变。"""
         cookies_dict = read_cookies_from_txt()
         if not cookies_dict:
-            update_output_text(output_text,"异常20")
+            update_output_text(output_text,"异常20\n")
             return "error"
 
         if not invoice_id:
-            update_output_text(output_text,"异常21")
+            update_output_text(output_text,"异常21\n")
             return "error"
 
         session = requests.Session()
@@ -805,19 +808,19 @@ def netchb_query(account, password, output_text):
             soup = BeautifulSoup(response.text, 'html.parser')
             line_tr = soup.find("tr", class_="light")
             if not line_tr:
-                update_output_text(output_text,"异常22")
+                update_output_text(output_text,"异常22\n")
                 return "error"
 
             tds = line_tr.find_all("td")
             if len(tds) < 9:
-                update_output_text(output_text,f"[异常23 {len(tds)}")
+                update_output_text(output_text,f"[异常23 {len(tds)}\n")
                 return "error"
 
             manufacturer = tds[8].get_text(strip=True)
             return manufacturer
 
         except Exception as e:
-            update_output_text(output_text,f"异常25 {e}")
+            update_output_text(output_text,f"异常25 {e}\n")
             return "error"
 
     # ==============================================================================
@@ -829,9 +832,9 @@ def netchb_query(account, password, output_text):
         df = pd.read_excel(file_path, engine='openpyxl')
         entry_nos = df.iloc[:, 0].astype(str).str.strip().tolist()
         entry_nos = [re.search(r'\d+', x).group() if '-' in x else x for x in entry_nos]
-        update_output_text(output_text,f"成功读取 {len(entry_nos)} 个单号。")
+        update_output_text(output_text,f"成功读取 {len(entry_nos)} 个单号。\n")
     except Exception as e:
-        update_output_text(output_text,f"读取 Excel 文件时发生错误: {e}")
+        update_output_text(output_text,f"读取 Excel 文件时发生错误: {e}\n")
         entry_nos = []
 
     # 初始化列表
@@ -861,7 +864,7 @@ def netchb_query(account, password, output_text):
             pending_queries.append({'entry_no': entry_no, 'prefixed_no': prefixed_no, 'query_id': query_id})
 
         except Exception as e:
-            update_output_text(output_text,f"[{prefixed_no}] 异常27 {e}")
+            update_output_text(output_text,f"[{prefixed_no}] 异常27 {e}\n")
             error_msg = f"查询准备失败: {e}"
             # 记录查询准备失败，使用错误信息填充所有结果列
             # 字段顺序: entry_no + counts(8) + manifested_port + actual_port + manufacturer + status
@@ -889,7 +892,7 @@ def netchb_query(account, password, output_text):
 
         while time.time() - start_time < TIMEOUT_SECONDS:
             time_elapsed = int(time.time() - start_time)
-            update_output_text(output_text,f"[{prefixed_no}] 尝试获取查询结果 (已耗时: {time_elapsed}s / {TIMEOUT_SECONDS}s)")
+            update_output_text(output_text,f"[{prefixed_no}] 尝试获取查询结果 (已耗时: {time_elapsed}s / {TIMEOUT_SECONDS}s)\n")
 
             # 2a. 获取 counts, ports, doc_required 和原始响应文本
             current_counts, m_port, a_port, doc_required, response_text = view_query_result(prefixed_no, query_id)
@@ -897,7 +900,7 @@ def netchb_query(account, password, output_text):
             # 2b. 检查是否成功
             # 成功条件：counts 中不含 "error" 且 响应文本中不含 "Not Received"
             if "error" not in current_counts and not is_result_not_received(response_text):
-                update_output_text(output_text,f"[{prefixed_no}] 查询结果成功获取。")
+                update_output_text(output_text,f"[{prefixed_no}] 查询结果成功获取。\n")
 
                 # 2c. 存储成功获取的数据并尝试获取 manufacturer
                 counts = current_counts
@@ -920,24 +923,24 @@ def netchb_query(account, password, output_text):
                 query_success = True
                 break
             elif "error" in current_counts:
-                update_output_text(output_text,f"[{prefixed_no}] 请求出错，等待重试...")
+                update_output_text(output_text,f"[{prefixed_no}] 请求出错，等待重试...\n")
             elif is_result_not_received(response_text):
-                update_output_text(output_text,f"[{prefixed_no}] 结果未就绪，等待 {RETRY_DELAY_SECONDS} 秒后重试...")
+                update_output_text(output_text,f"[{prefixed_no}] 结果未就绪，等待 {RETRY_DELAY_SECONDS} 秒后重试...\n")
             else:
-                update_output_text(output_text,f"[{prefixed_no}] 未知失败，等待 {RETRY_DELAY_SECONDS} 秒后重试...")
+                update_output_text(output_text,f"[{prefixed_no}] 未知失败，等待 {RETRY_DELAY_SECONDS} 秒后重试...\n")
 
             # 2d. 等待重试
             time.sleep(RETRY_DELAY_SECONDS)
 
         # 3. 计算最终状态 (Calculate final status)
         if not query_success:
-            update_output_text(output_text,f"[{prefixed_no}] 达到 {TIMEOUT_SECONDS} 秒超时，未能获取最终结果。")
+            update_output_text(output_text,f"[{prefixed_no}] 达到 {TIMEOUT_SECONDS} 秒超时，未能获取最终结果。\n")
             final_status = "query 失败"
         else:
             # 检查港口信息提取是否失败（满足用户新增要求）
             if manifested_port == PORT_MISSING_ERROR:
                 final_status = "query 失败"
-                update_output_text(output_text,f"[{prefixed_no}] 港口信息提取失败（Manifested Port 或 Actual Port 缺失），状态设置为 'query 失败'。")
+                update_output_text(output_text,f"[{prefixed_no}] 港口信息提取失败（Manifested Port 或 Actual Port 缺失），状态设置为 'query 失败'。\n")
                 # 确保 port 列的数据被记录为 '提取失败'
                 if manifested_port == PORT_MISSING_ERROR: manifested_port = "提取失败"
                 if actual_port == PORT_MISSING_ERROR: actual_port = "提取失败"
@@ -970,11 +973,12 @@ def netchb_query(account, password, output_text):
     # 写入 Excel
     try:
         df_result.to_excel(file_path, index=False)
-        update_output_text(output_text,f"\n处理完成！结果已保存：{file_path}")
+        update_output_text(output_text,f"\n处理完成！结果已保存：{file_path}\n")
     except Exception as e:
-        update_output_text(output_text,f"\n写入 Excel 文件失败: {e}")
+        update_output_text(output_text,f"\n写入 Excel 文件失败: {e}\n")
     update_output_text(output_text,"程序完成")
 def netchb_entry_update(account, password, output_text):
+    update_output_text(output_text, "请事先检查好数据正确再开始代码\n请不要在运行时手动打开任何netchb页面\n因为netchb本身bug会导致信息混乱")
     user_home = os.path.expanduser("~")
     possible_paths = [
         os.path.join(user_home, "Desktop"),
@@ -986,7 +990,7 @@ def netchb_entry_update(account, password, output_text):
     desktop_path = next((path for path in possible_paths if os.path.exists(path)), None)
 
     if desktop_path:
-        file_path = os.path.join(desktop_path, "yuejie.xlsx")
+        file_path = os.path.join(desktop_path, "nxu.xlsx")
         if os.path.exists(file_path):
             update_output_text(output_text,"已找到需要的excel，正在继续代码\n")
             pass
@@ -1059,7 +1063,7 @@ def netchb_entry_update(account, password, output_text):
     driver.get(url)
 
     def read_cookies_from_txt():
-        txt_file_path = os.path.join(desktop_path, "yuejie.txt")
+        txt_file_path = os.path.join(desktop_path, "nxu.txt")
 
         if not os.path.exists(txt_file_path):
             update_output_text(output_text,"output.txt 文件不存在！\n")
@@ -1071,7 +1075,7 @@ def netchb_entry_update(account, password, output_text):
 
             raw_cookies = data.get("cookies", {})
             if not isinstance(raw_cookies, dict):
-                update_output_text(output_text,"异常1")
+                update_output_text(output_text,"异常1\n")
                 return {}
 
             cookies_dict = {}
@@ -1084,10 +1088,10 @@ def netchb_entry_update(account, password, output_text):
             return cookies_dict
 
         except json.JSONDecodeError as je:
-            update_output_text(output_text,f"网页解析失败！错误: {je}")
+            update_output_text(output_text,f"网页解析失败！错误: {je}\n")
             return {}
         except Exception as e:
-            update_output_text(output_text,f"读取文本文件出错: {type(e).__name__}: {e}")
+            update_output_text(output_text,f"读取文本文件出错: {type(e).__name__}: {e}\n")
             return {}
 
     def get_mawb_info(entry_no, cookies, result_dict):
@@ -1238,7 +1242,7 @@ def netchb_entry_update(account, password, output_text):
     # 提取第十列（manufacture_list），注意这里都是 'Y'
     manufacture_list = df_filtered.iloc[:, 11].astype(str).str.strip().tolist()
     # 2. 处理每个单号（在单号前加 2）
-    update_output_text(output_text,f'entry都有:{entry_nos}')
+    update_output_text(output_text,f'entry都有:{entry_nos}\n')
 
     def main_function(entry_no, manufacture):
         prefixed_no = f"2{entry_no}"  # <--- 这里在前面加 2
@@ -1262,11 +1266,31 @@ def netchb_entry_update(account, password, output_text):
         save_button.click()
 
         driver.get(f'https://www.netchb.com/app/entry/transmit/finalizeEntry.do?filerCode=NXU&entryNo={prefixed_no}')
+
         transmit_button = driver.find_element(By.XPATH,
                                               '//*[@id="t0"]/input[1]')
-
+        original_title = driver.title
 
         transmit_button.click()
+
+        # ------------------- 检查点 (Title 和 URL 变化) -------------------
+
+        # 2. 等待 Title 发生变化 (最大等待 15 秒)
+        try:
+            WebDriverWait(driver, 15).until_not(
+                EC.title_is(original_title)
+            )
+        except TimeoutException:
+            # 如果 15 秒 Title 都没变，说明点击失败或页面未响应，直接报错触发重试
+            raise Exception(f"Transmit 点击后 Title 15s 内未变化，可能提交失败或卡顿。")
+
+
+        target_path = "https://www.netchb.com/app/entry/transmit/finalizeEntry.do"
+
+        current_url = driver.current_url
+
+        if current_url.startswith(target_path):
+            raise Exception(f"Transmit 点击后 URL 异常，仍以 {target_path} 开头，可能提交失败或出现 500 错误。")
 
 
 
@@ -1283,15 +1307,15 @@ def netchb_entry_update(account, password, output_text):
         for attempt in range(2):
             try:
                 main_function(entry_no, manufacture)
-                update_output_text(output_text, f"{entry_no} 处理成功")
+                update_output_text(output_text, f"{entry_no} 处理成功\n")
                 success = True
                 break  # 成功就跳出重试循环
             except Exception as e:
                 if attempt == 0:
-                    update_output_text(output_text, f"{entry_no} 第1次失败: {e}，1秒后重试...")
+                    update_output_text(output_text, f"{entry_no} 第1次失败: {e}，1秒后重试...\n")
                     time.sleep(1)
                 else:
-                    update_output_text(output_text, f"{entry_no} 第2次也失败，标记为失败")
+                    update_output_text(output_text, f"{entry_no} 第2次也失败，标记为失败\n")
                     df.loc[idx, df.columns[13]] = "清关失败"  # 第14列（N列）标记失败
                     success = False
 
@@ -1587,7 +1611,7 @@ def go_back_to_main(current_frame, account, password):
 
 # 初始化主窗口
 root = ctk.CTk()
-root.title("真是一对苦命鸳鸯")
+root.title("NXU AUTO")
 root.geometry("600x420")
 root.configure(fg_color="#1e1e1e")
 
