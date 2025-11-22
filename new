@@ -1428,7 +1428,51 @@ def netchb_entry_update(account, password, output_text):
         save_button = driver.find_element(By.XPATH,
                                           '//*[@id="entF"]/div[11]/input[1]')
         save_button.click()
+#***********************************************************************************************
+        update_output_text(output_text, f"[{prefixed_no}] 正在更新 Entry Header 日期...\n")
+        driver.get(f'https://www.netchb.com/app/entry/editHeader.do?filerCode=NXU&entryNo={prefixed_no}')
 
+        # 2. 计算今天的日期（格式 MMddyy，例如 112125）
+        today_date_str = datetime.now().strftime("%m%d%y")
+
+        # 3. 定位 Entry Date 输入框并清空、输入新日期
+        entry_date_xpath = '//*[@id="entryDate"]'
+        entry_date_field = WebDriverWait(driver, 10).until(
+            EC.visibility_of_element_located((By.XPATH, entry_date_xpath))
+        )
+        entry_date_field.clear()
+        entry_date_field.send_keys(today_date_str)
+        update_output_text(output_text, f"[{prefixed_no}] Entry Date 已设置为: {today_date_str}\n")
+
+        # 4. 触发失焦（Blur）事件来强制弹出 Alert
+        #    通过执行 JavaScript，模拟鼠标点击/Tab键离开输入框的效果，以触发页面的 onblur 事件。
+        driver.execute_script(f"""
+                    document.getElementById('entryDate').blur();
+                """)
+
+        # 5. 处理弹出的 Alert 警告框
+        try:
+            # 等待 Alert 出现（最多 2 秒）
+            WebDriverWait(driver, 2).until(EC.alert_is_present())
+            alert = driver.switch_to.alert
+            alert_text = alert.text
+            alert.accept()  # 点击 OK 按钮
+        except TimeoutException:
+            # 没有弹出 Alert，可能不需要
+            update_output_text(output_text, f"[{prefixed_no}] 2s 内未检测到 Alert，继续。\n")
+        except NoAlertPresentException:
+            # Alert 未弹出
+            update_output_text(output_text, f"[{prefixed_no}] Alert 未弹出，继续。\n")
+
+        # 6. 保存操作（根据您的要求，此处暂时注释掉，并暂停 30 秒进行测试）
+
+        save_button_xpath = '//*[@id="ehf"]/input[5]'
+        save_button = driver.find_element(By.XPATH, save_button_xpath)
+        save_button.click()
+        update_output_text(output_text, f"[{prefixed_no}] Entry Header 已保存。\n")
+
+        time.sleep(30)  # 暂停 30 秒以供用户测试
+#***************************************************************************************************
         driver.get(f'https://www.netchb.com/app/entry/transmit/finalizeEntry.do?filerCode=NXU&entryNo={prefixed_no}')
 
         transmit_button = driver.find_element(By.XPATH,
@@ -1775,7 +1819,7 @@ def go_back_to_main(current_frame, account, password):
 
 # 初始化主窗
 root = ctk.CTk()
-root.title("真是一对苦命鸳鸯")
+root.title("NXUAUTO")
 root.geometry("600x420")
 root.configure(fg_color="#1e1e1e")
 
