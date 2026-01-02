@@ -961,7 +961,7 @@ def netchb_query(account, password, output_text):
     # --- PHASE 1: QUERY SUBMISSION (批量提交查询，不等待结果) ---
 
     for entry_no in entry_nos:
-        prefixed_no = f"2{entry_no}"
+        prefixed_no = f"9{entry_no}"
 
         try:
             # 1. 首次查询准备 (Initial Query Preparation)
@@ -1409,7 +1409,7 @@ def netchb_entry_update(account, password, output_text):
     update_output_text(output_text,f'entry都有:{entry_nos}\n')
 
     def main_function(entry_no, manufacture):
-        prefixed_no = f"2{entry_no}"  # <--- 这里在前面加 2
+        prefixed_no = f"9{entry_no}"  # <--- 这里在前面加 2
         driver.get(f'https://www.netchb.com/app/entry/isf.do?filerCode=NXU&entryNo={prefixed_no}')
         mf_input = WebDriverWait(driver, 10).until(
             EC.visibility_of_element_located((By.XPATH, '//*[@id="sMd0"]'))
