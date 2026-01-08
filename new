@@ -122,7 +122,7 @@ def update_output_text(output_text, message):
 
 
 # *************************预设*****************************************************************************************
-def netchb_token(account, password, output_text):
+def netchb_token(account, password, output_text, auth_code):
     expiration_date = expiration_date1
     now = datetime.now()
     func_name = inspect.currentframe().f_code.co_name  # 自动获取当前函数名
@@ -210,6 +210,24 @@ def netchb_token(account, password, output_text):
     login_button = driver.find_element(By.XPATH,
                                        "/html/body/div[2]/div[3]/div/main/div/div/div/article/div/div/form/div[2]/input")
     login_button.click()
+    xpath_input = '/html/body/div[2]/div[3]/div/main/div/div/div/article/div/div/form/div[1]/ul/li/div/input'
+    xpath_login_btn = '//*[@id="tfaForm"]/div[2]/input'
+
+    try:
+        wait = WebDriverWait(driver, 10)
+
+        # 1. 输入验证码 (不加回车)
+        code_field = wait.until(EC.presence_of_element_located((By.XPATH, xpath_input)))
+        code_field.send_keys(auth_code)
+
+        # 2. 点击登录键
+        login_btn = driver.find_element(By.XPATH, xpath_login_btn)
+        login_btn.click()
+
+        update_output_text(output_text, "✅ 验证码已提交，正在登录...\n")
+    except Exception as e:
+        update_output_text(output_text, f"[Error] 错误001: {e}\n")
+
     initial_title = driver.title
     initial_url = driver.current_url
     url = "https://www.netchb.com/app/entry/"
@@ -281,7 +299,7 @@ def netchb_token(account, password, output_text):
         driver.quit()
         sys.exit()  # 程序立即停止
 
-def netchb_query(account, password, output_text):
+def netchb_query(account, password, output_text, auth_code):
     expiration_date = expiration_date1
     now = datetime.now()
     func_name = inspect.currentframe().f_code.co_name  # 自动获取当前函数名
@@ -1141,7 +1159,7 @@ def netchb_query(account, password, output_text):
     except Exception as e:
         update_output_text(output_text, f"\n写入 Excel 文件失败: {e}\n")
     update_output_text(output_text, "程序完成")
-def netchb_entry_update(account, password, output_text):
+def netchb_entry_update(account, password, output_text, auth_code):
     update_output_text(output_text, "请事先检查好数据正确再开始代码\n请不要在运行时手动打开任何netchb页面\n因为netchb本身bug会导致信息混乱")
     user_home = os.path.expanduser("~")
     possible_paths = [
@@ -1221,6 +1239,23 @@ def netchb_entry_update(account, password, output_text):
     login_button = driver.find_element(By.XPATH,
                                        "/html/body/div[2]/div[3]/div/main/div/div/div/article/div/div/form/div[2]/input")
     login_button.click()
+    xpath_input = '/html/body/div[2]/div[3]/div/main/div/div/div/article/div/div/form/div[1]/ul/li/div/input'
+    xpath_login_btn = '//*[@id="tfaForm"]/div[2]/input'
+
+    try:
+        wait = WebDriverWait(driver, 10)
+
+        # 1. 输入验证码 (不加回车)
+        code_field = wait.until(EC.presence_of_element_located((By.XPATH, xpath_input)))
+        code_field.send_keys(auth_code)
+
+        # 2. 点击登录键
+        login_btn = driver.find_element(By.XPATH, xpath_login_btn)
+        login_btn.click()
+
+        update_output_text(output_text, "✅ 验证码已提交，正在登录...\n")
+    except Exception as e:
+        update_output_text(output_text, f"[Error] 错误001: {e}\n")
     initial_title = driver.title
     initial_url = driver.current_url
     url = "https://www.netchb.com/app/entry/"
@@ -1230,7 +1265,7 @@ def netchb_entry_update(account, password, output_text):
         txt_file_path = os.path.join(desktop_path, "nxu.txt")
 
         if not os.path.exists(txt_file_path):
-            update_output_text(output_text,"output.txt 文件不存在！\n")
+            update_output_text(output_text,"nxu.txt 文件不存在！\n")
             return {}
 
         try:
@@ -1565,15 +1600,16 @@ ctk.set_default_color_theme("blue")
 stop_event = threading.Event()
 
 
-def start_program(account, password, output_text, task_type, mode=None):
-    stop_event.clear()  # 清除停止事件，准备开始任务
+def start_program(account, password, output_text, task_type, mode=None, auth_code=None):
+    stop_event.clear()
 
+    # --- 修改：将 auth_code 传给每一个具体的业务函数 ---
     if task_type == "netchb larry服务器链接（4小时一次）":
-        netchb_token(account, password, output_text)
+        netchb_token(account, password, output_text, auth_code) # 传下去
     elif task_type == "query目标单号":
-        netchb_query(account, password, output_text)
+        netchb_query(account, password, output_text, auth_code) # 传下去
     elif task_type == "netchb上传":
-        netchb_entry_update(account, password, output_text)
+        netchb_entry_update(account, password, output_text, auth_code) # 传下去
     # 登录界面
 
 
@@ -1790,13 +1826,25 @@ def show_task_window(account, password, task_type):
         return  # 不继续执行下面的通用逻辑
 
     def start_task():
+        # --- 新增：弹出输入框获取 6 位 Code ---
+        dialog = ctk.CTkInputDialog(text="请输入 6 位 NetCHB 验证码:", title="验证码确认")
+        auth_code = dialog.get_input()
+
+        # 校验输入
+        if not auth_code or len(auth_code) != 6:
+            output_text.insert("end", "❌ 错误：必须输入 6 位验证码才能继续！\n")
+            return
+
         output_text.insert("end", f"启动 {task_type} 任务...\n")
+
+        # --- 修改：在 args 的最后增加 auth_code 参数 ---
         if task_type == "Hold" or task_type == "header修改":
             mode = mode_var.get()
-            threading.Thread(target=start_program, args=(account, password, output_text, task_type, mode),
+            threading.Thread(target=start_program, args=(account, password, output_text, task_type, mode, auth_code),
                              daemon=True).start()
         else:
-            threading.Thread(target=start_program, args=(account, password, output_text, task_type),
+            # 注意：即便没有 mode，也要传一个 None 占位，或者调整 start_program 的接收方式
+            threading.Thread(target=start_program, args=(account, password, output_text, task_type, None, auth_code),
                              daemon=True).start()
 
     start_button = ctk.CTkButton(task_frame, text="开始任务", command=start_task)
