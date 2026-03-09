@@ -1461,7 +1461,7 @@ def netchb_entry_update(account, password, output_text, auth_code):
         select.select_by_value("consignee")
         time.sleep(2)
         save_button = driver.find_element(By.XPATH,
-                                          '//*[@id="entF"]/div[11]/input[1]')
+                                          '//*[@id="entF"]/div[12]/input[1]')
         save_button.click()
 #***********************************************************************************************
         update_output_text(output_text, f"[{prefixed_no}] 正在更新 Entry Header 日期...\n")
