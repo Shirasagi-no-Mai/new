@@ -1548,45 +1548,53 @@ def netchb_entry_update(account, password, output_text, auth_code):
 
     for idx, entry_no, manufacture in zip(original_indices, entry_nos, manufacture_list):
         success = False
+        update_output_text(output_text, f"--- 正在处理: {entry_no} --- \n")
+
+        # 1. 执行主逻辑 (ISF 更新, Date 更新, Transmit)
         for attempt in range(2):
             try:
                 main_function(entry_no, manufacture)
-                update_output_text(output_text, f"{entry_no} 处理成功\n")
                 success = True
-                break  # 成功就跳出重试循环
+                update_output_text(output_text, f"[{entry_no}] 提交操作成功\n")
+                break
             except Exception as e:
-                if attempt == 0:
-                    update_output_text(output_text, f"{entry_no} 第1次失败: {e}，1秒后重试...\n")
-                    time.sleep(1)
-                else:
-                    update_output_text(output_text, f"{entry_no} 第2次也失败，标记为失败\n")
-                    df.loc[idx, df.columns[13]] = "清关失败"  # 第14列（N列）标记失败
-                    success = False
+                update_output_text(output_text, f"[{entry_no}] 第{attempt + 1}次操作失败: {e}\n")
+                if attempt == 0: time.sleep(2)
 
-        # 如果两次都失败，也要保证有标记（上面的 else 已经写了，这里再保一次）
-        if not success:
-            df.loc[idx, df.columns[13]] = "清关失败"
+        # 2. 无论主逻辑是否成功，都尝试获取回执状态 (或者标记失败)
+        if success:
+            try:
+                # 等待系统处理 (回执通常有几秒延迟)
+                time.sleep(3)
+                # 直接获取当前 cookies
+                current_cookies = {c['name']: c['value'] for c in driver.get_cookies()}
 
-        # ------------------- 前面 Selenium 部分结束，等 2 秒再去查状态 -------------------
-        driver.get('https://www.netchb.com/app/entry/index.jsp')
-        time.sleep(2)
+                # 创建一个临时的单次查询字典
+                single_result = {}
+                get_mawb_info(entry_no, current_cookies, single_result)
 
-        # ------------------- 读取 cookies 并抓取 7501 / 3461 状态 -------------------
-        cookies = read_cookies_from_txt()
-        get_mawb_info(entry_no, cookies, result_dict)
-
-        # ------------------- 把抓到的状态写回 Excel 第15、16列 -------------------
-        if entry_no in result_dict:
-            st = result_dict[entry_no]
-            df.loc[idx, '7501_status'] = st.get("7501", "N/A")  # 第15列（O列）
-            df.loc[idx, '3461_status'] = st.get("3461", "N/A")  # 第16列（P列）
+                # 写入状态
+                if entry_no in single_result:
+                    df.loc[idx, '7501_status'] = single_result[entry_no].get("7501", "N/A")
+                    df.loc[idx, '3461_status'] = single_result[entry_no].get("3461", "N/A")
+                    df.loc[idx, df.columns[13]] = "操作成功"
+            except Exception as e:
+                update_output_text(output_text, f"[{entry_no}] 回执查询出错: {e}\n")
         else:
-            df.loc[idx, '7501_status'] = "查询失败"
-            df.loc[idx, '3461_status'] = "查询失败"
+            # 标记明确的失败原因
+            df.loc[idx, df.columns[13]] = "清关提交失败"
+            df.loc[idx, '7501_status'] = "FAIL"
+            df.loc[idx, '3461_status'] = "FAIL"
 
-    # ------------------- 全部处理完毕，一次性保存 Excel -------------------
-    df.to_excel(file_path, index=False, engine='openpyxl')
-    update_output_text(output_text, "处理完毕！\n")
+        # 3. 【核心改进】每跑完一单，立即保存一次 Excel
+        # 这样即使下一单崩了，这一单的结果也已经在硬盘里了
+        try:
+            df.to_excel(file_path, index=False, engine='openpyxl')
+            update_output_text(output_text, f"[{entry_no}] 进度已实时保存到 Excel\n")
+        except Exception as e:
+            update_output_text(output_text, f"⚠️ 警告: 无法写入 Excel 文件 (可能被打开了): {e}\n")
+
+    update_output_text(output_text, "✅ 所有单据处理流程结束。\n")
 
 
 
